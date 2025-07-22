@@ -716,7 +716,10 @@ class AutoVCApp:
             # you prefer to serve from disk, replace this assignment with
             # `html = open(<path_to_index_html>).read()`.
             try:
-                html = '''<!DOCTYPE html>
+                # Serve the interactive application by embedding the full HTML directly. This
+                # version includes working JavaScript that calls the free `/api/analyze`
+                # endpoint and displays results, pro features, and download options.
+                html = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -883,6 +886,144 @@ class AutoVCApp:
             to { opacity: 1; transform: translateY(0); }
         }
 
+        .verdict {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .decision {
+            font-size: 72px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .decision.fund {
+            color: #00ff00;
+        }
+
+        .decision.pass {
+            color: #ff4444;
+        }
+
+        .confidence {
+            font-size: 20px;
+            color: #888;
+            margin-bottom: 20px;
+        }
+
+        .hot-take {
+            font-size: 24px;
+            font-style: italic;
+            color: #ffa500;
+            background: rgba(255, 165, 0, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #ffa500;
+        }
+
+        .feedback-section {
+            margin: 40px 0;
+        }
+
+        .feedback-item {
+            margin-bottom: 30px;
+        }
+
+        .feedback-title {
+            font-size: 20px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .feedback-icon {
+            margin-right: 10px;
+            font-size: 24px;
+        }
+
+        .brutal-truth .feedback-title {
+            color: #ff6666;
+        }
+
+        .promising .feedback-title {
+            color: #66ff66;
+        }
+
+        .feedback-content {
+            color: #ccc;
+            line-height: 1.6;
+            padding-left: 34px;
+        }
+
+        .score-section {
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .overall-score {
+            font-size: 36px;
+            color: #ff6600;
+            font-weight: bold;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 40px;
+        }
+
+        .action-button {
+            padding: 12px 32px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .share-button {
+            background: #ff6600;
+            color: white;
+        }
+
+        .share-button:hover {
+            background: #ff8833;
+        }
+
+        .download-button {
+            background: transparent;
+            color: #ff6600;
+            border: 2px solid #ff6600;
+        }
+
+        .download-button:hover {
+            background: #ff6600;
+            color: white;
+        }
+
+        .upgrade-button {
+            background: #6b46c1;
+            color: white;
+        }
+
+        .upgrade-button:hover {
+            background: #7c3aed;
+        }
+
+        .meme-card {
+            margin: 40px 0;
+            text-align: center;
+        }
+
+        .meme-card img {
+            max-width: 100%;
+            max-height: 600px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
         .footer {
             text-align: center;
             color: #666;
@@ -907,6 +1048,78 @@ class AutoVCApp:
             border-radius: 8px;
             margin: 20px 0;
             text-align: center;
+        }
+
+        .pro-section {
+            background: linear-gradient(135deg, #6b46c1 0%, #ff6600 100%);
+            border-radius: 16px;
+            padding: 40px;
+            margin: 40px 0;
+            display: none;
+        }
+
+        .pro-section.show {
+            display: block;
+        }
+
+        .pro-title {
+            font-size: 32px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .pro-content {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 30px;
+        }
+
+        .pro-subsection {
+            margin-bottom: 30px;
+        }
+
+        .pro-subsection h3 {
+            color: #ffa500;
+            margin-bottom: 15px;
+        }
+
+        .pro-list {
+            list-style: none;
+            padding-left: 20px;
+        }
+
+        .pro-list li {
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .pro-list li:before {
+            content: "→";
+            position: absolute;
+            left: -20px;
+            color: #ff6600;
+        }
+
+        .competitor-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .financial-table {
+            width: 100%;
+            margin-top: 15px;
+        }
+
+        .financial-table td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .financial-table td:first-child {
+            font-weight: bold;
+            color: #ffa500;
         }
     </style>
 </head>
@@ -936,7 +1149,56 @@ class AutoVCApp:
         </div>
 
         <div class="results-section" id="resultsSection">
-            <!-- Results will be populated here -->
+            <div id="analysisSuccess" class="success-message" style="display: none;">
+                ✅ Analysis complete!
+            </div>
+            
+            <div class="verdict">
+                <div class="decision" id="decision"></div>
+                <div class="confidence" id="confidence"></div>
+                <div class="hot-take" id="hotTake"></div>
+            </div>
+
+            <div class="feedback-section">
+                <div class="feedback-item brutal-truth">
+                    <div class="feedback-title">
+                        <span class="feedback-icon">💣</span>
+                        The Brutal Truth
+                    </div>
+                    <div class="feedback-content" id="brutalTruth"></div>
+                </div>
+
+                <div class="feedback-item promising">
+                    <div class="feedback-title">
+                        <span class="feedback-icon">✨</span>
+                        What's Promising
+                    </div>
+                    <div class="feedback-content" id="promising"></div>
+                </div>
+            </div>
+
+            <div class="score-section">
+                <div class="overall-score" id="overallScore"></div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="action-button share-button" id="shareButton">
+                    Share Your Roast 🔥
+                </button>
+                <button class="action-button download-button" id="downloadButton">
+                    Download Meme
+                </button>
+                <button class="action-button upgrade-button" id="upgradeButton">
+                    See Pro Analysis 🚀
+                </button>
+            </div>
+
+            <div class="meme-card" id="memeCard"></div>
+        </div>
+
+        <div class="pro-section" id="proSection">
+            <h2 class="pro-title">🚀 Pro Analysis</h2>
+            <div class="pro-content" id="proContent"></div>
         </div>
 
         <div class="footer">
@@ -955,6 +1217,10 @@ class AutoVCApp:
         const selectedFileDiv = document.getElementById('selectedFile');
         const analyzeButton = document.getElementById('analyzeButton');
         const resultsSection = document.getElementById('resultsSection');
+        const shareButton = document.getElementById('shareButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const upgradeButton = document.getElementById('upgradeButton');
+        const proSection = document.getElementById('proSection');
 
         // File upload handling
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -1010,20 +1276,217 @@ class AutoVCApp:
             analyzeButton.disabled = true;
             analyzeButton.innerHTML = 'Analyzing... <span class="loading"></span>';
             resultsSection.classList.remove('show');
+            proSection.classList.remove('show');
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            
-            // Note: This is a simplified version. 
-            // The actual analysis requires authentication
-            alert('Analysis feature requires authentication. Please use the API endpoints directly.');
-            
-            analyzeButton.disabled = false;
-            analyzeButton.innerHTML = '🔥 Get Roasted';
+            formData.append('is_public', 'true');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/analyze`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                    document.getElementById('analysisSuccess').style.display = 'block';
+                } else {
+                    alert(data.error || 'Analysis failed');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to analyze pitch deck. Please try again.');
+            } finally {
+                analyzeButton.disabled = false;
+                analyzeButton.innerHTML = '🔥 Get Roasted';
+            }
         });
+
+        function displayResults(data) {
+            currentAnalysisId = data.analysis_id;
+            
+            // Verdict
+            const decision = document.getElementById('decision');
+            decision.textContent = data.verdict.decision;
+            decision.className = `decision ${data.verdict.decision.toLowerCase()}`;
+            
+            document.getElementById('confidence').textContent = `Confidence: ${data.verdict.confidence}%`;
+            document.getElementById('hotTake').textContent = `"${data.verdict.hot_take}"`;
+            
+            // Feedback
+            document.getElementById('brutalTruth').textContent = data.feedback.brutal_truth;
+            document.getElementById('promising').textContent = data.feedback.encouragement;
+            
+            // Score
+            document.getElementById('overallScore').textContent = `Overall Score: ${data.benchmarks.overall_score}/10`;
+            
+            // Meme card
+            if (data.meme_card_url) {
+                const memeCard = document.getElementById('memeCard');
+                memeCard.innerHTML = `<img src="${data.meme_card_url}" alt="AutoVC Roast Card">`;
+            }
+            
+            resultsSection.classList.add('show');
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Share functionality
+        shareButton.addEventListener('click', async () => {
+            const shareData = {
+                title: 'My AutoVC Pitch Roast',
+                text: `I got roasted by AutoVC! Check out my pitch analysis.`,
+                url: `${window.location.origin}/analysis/${currentAnalysisId}`
+            };
+
+            try {
+                if (navigator.share) {
+                    await navigator.share(shareData);
+                } else {
+                    // Fallback - copy to clipboard
+                    await navigator.clipboard.writeText(shareData.url);
+                    alert('Link copied to clipboard!');
+                }
+            } catch (err) {
+                console.error('Error sharing:', err);
+            }
+        });
+
+        // Download meme
+        downloadButton.addEventListener('click', async () => {
+            if (!currentAnalysisId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/download-meme/${currentAnalysisId}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `autovc_roast_${currentAnalysisId.substring(0, 8)}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    alert('Failed to download meme');
+                }
+            } catch (error) {
+                console.error('Error downloading meme:', error);
+                alert('Failed to download meme');
+            }
+        });
+
+        // Upgrade to Pro
+        upgradeButton.addEventListener('click', async () => {
+            if (!currentAnalysisId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/pro-analysis/${currentAnalysisId}`);
+                
+                if (response.ok) {
+                    const proData = await response.json();
+                    displayProAnalysis(proData);
+                } else {
+                    alert('Failed to load pro analysis');
+                }
+            } catch (error) {
+                console.error('Error loading pro analysis:', error);
+                alert('Failed to load pro analysis');
+            }
+        });
+
+        function displayProAnalysis(data) {
+            const proContent = document.getElementById('proContent');
+            
+            let html = `
+                <div class="pro-subsection">
+                    <h3>🎯 Market Analysis</h3>
+                    <p><strong>TAM:</strong> ${data.analysis.market.tam}</p>
+                    <p><strong>Competition:</strong> ${data.analysis.market.competition}</p>
+                    <p><strong>Timing:</strong> ${data.analysis.market.timing}</p>
+                </div>
+
+                <div class="pro-subsection">
+                    <h3>👥 Founder Assessment</h3>
+                    <p><strong>Strengths:</strong></p>
+                    <ul class="pro-list">
+                        ${data.analysis.founders.strengths.map(s => `<li>${s}</li>`).join('')}
+                    </ul>
+                    <p><strong>Weaknesses:</strong></p>
+                    <ul class="pro-list">
+                        ${data.analysis.founders.weaknesses.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                    <p><strong>Missing:</strong> ${data.analysis.founders.missing}</p>
+                </div>
+            `;
+
+            if (data.pro_insights) {
+                html += `
+                    <div class="pro-subsection">
+                        <h3>🏆 Competitor Analysis</h3>
+                        ${data.pro_insights.competitor_analysis.main_competitors.map(c => `
+                            <div class="competitor-card">
+                                <strong>${c.name}</strong><br>
+                                ✅ Strength: ${c.strength}<br>
+                                ❌ Weakness: ${c.weakness}
+                            </div>
+                        `).join('')}
+                        <p><strong>Your Positioning:</strong> ${data.pro_insights.competitor_analysis.positioning}</p>
+                    </div>
+
+                    <div class="pro-subsection">
+                        <h3>💰 Market Opportunity</h3>
+                        <p><strong>TAM:</strong> ${data.pro_insights.market_opportunity.tam_breakdown}</p>
+                        <p><strong>SAM:</strong> ${data.pro_insights.market_opportunity.sam}</p>
+                        <p><strong>SOM:</strong> ${data.pro_insights.market_opportunity.som}</p>
+                        <p><strong>Growth Rate:</strong> ${data.pro_insights.market_opportunity.growth_rate}</p>
+                    </div>
+
+                    <div class="pro-subsection">
+                        <h3>📊 Financial Projections</h3>
+                        <table class="financial-table">
+                            <tr>
+                                <td>Year 1</td>
+                                <td>Users: ${data.pro_insights.financial_projections.year_1.users}</td>
+                                <td>Revenue: ${data.pro_insights.financial_projections.year_1.revenue}</td>
+                            </tr>
+                            <tr>
+                                <td>Year 2</td>
+                                <td>Users: ${data.pro_insights.financial_projections.year_2.users}</td>
+                                <td>Revenue: ${data.pro_insights.financial_projections.year_2.revenue}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="pro-subsection">
+                        <h3>🚀 Next Steps</h3>
+                        <p><strong>Immediate (Do Now):</strong></p>
+                        <ul class="pro-list">
+                            ${data.pro_insights.next_steps.immediate.map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                        <p><strong>30 Days:</strong></p>
+                        <ul class="pro-list">
+                            ${data.pro_insights.next_steps['30_days'].map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                        <p><strong>90 Days:</strong></p>
+                        <ul class="pro-list">
+                            ${data.pro_insights.next_steps['90_days'].map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            proContent.innerHTML = html;
+            proSection.classList.add('show');
+            proSection.scrollIntoView({ behavior: 'smooth' });
+        }
     </script>
 </body>
-</html>'''
+</html>"""
                 # Return the HTML with the appropriate content type.  Flask will
                 # automatically handle string responses, but providing the
                 # mime‑type makes the intent explicit.
@@ -1368,6 +1831,73 @@ class AutoVCApp:
             except Exception as e:
                 logger.error(f"Get pitch error: {e}")
                 return jsonify(error="Failed to retrieve pitch"), 500
+
+        # ---------------------------------------------------------------------
+        # Public free analysis endpoint
+        #
+        # This route enables users to perform a limited number of analyses
+        # without authentication.  It accepts a PDF or TXT file via form data,
+        # validates the input, extracts the text and runs a lightweight AI
+        # analysis.  Results are returned immediately and are not persisted in
+        # the database.  To prevent abuse, the endpoint is rate‑limited to 3
+        # requests per hour per IP.
+        @self.app.route('/api/analyze', methods=['POST'])
+        @self.limiter.limit("3 per hour")
+        def analyze_pitch_free():
+            """Free analysis endpoint – no authentication required"""
+            try:
+                # Ensure a file was uploaded
+                if 'file' not in request.files:
+                    return jsonify(error="No file uploaded"), 400
+                file = request.files['file']
+                if not file or file.filename == '':
+                    return jsonify(error="No file selected"), 400
+
+                # Validate file type and extension
+                filename = secure_filename(file.filename)
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext not in self.app.config["ALLOWED_EXTENSIONS"]:
+                    return jsonify(error=f"File type {file_ext} not supported"), 400
+
+                # Check file size (limit to configured max)
+                file.seek(0, os.SEEK_END)
+                file_size = file.tell()
+                file.seek(0)
+                if file_size > self.app.config["MAX_CONTENT_LENGTH"]:
+                    return jsonify(error="File too large (max 100MB)"), 400
+
+                # Read file content
+                file_content = file.read()
+
+                # Extract text depending on extension
+                try:
+                    if file_ext == '.pdf':
+                        content = self._extract_content(file_content, file_ext)
+                    elif file_ext == '.txt':
+                        content = file_content.decode('utf-8', errors='ignore')
+                    else:
+                        return jsonify(error="Only PDF and TXT files supported for free analysis"), 400
+                except Exception as exc:
+                    logger.error(f"Content extraction error: {exc}")
+                    return jsonify(error="Failed to read file content"), 500
+
+                # Perform AI analysis on a subset of the content for the free tier
+                analysis = self._get_ai_analysis(content[:3000])
+
+                # Generate a simple analysis identifier (8‑char UUID)
+                analysis_id = str(uuid.uuid4())[:8]
+
+                # Return the analysis results without persistence or pro data
+                return jsonify({
+                    'analysis_id': analysis_id,
+                    'verdict': analysis.get('verdict', {}),
+                    'feedback': analysis.get('feedback', {}),
+                    'benchmarks': analysis.get('benchmarks', {}),
+                    'meme_card_url': None
+                })
+            except Exception as exc:
+                logger.error(f"Free analysis error: {exc}")
+                return jsonify(error="Analysis failed. Please try again."), 500
         
         @self.app.route('/api/v2/pitch/<pitch_id>/voice-roast', methods=['POST'])
         @jwt_required()
