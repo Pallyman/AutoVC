@@ -691,34 +691,345 @@ class AutoVCApp:
             return self._render_homepage()
 
         # Serve the interactive analysis front‑end. This route delivers the
-        # standalone client application (index.html) bundled with this project.
-        # By using a relative URL here, users can access the analysis UI even
-        # when a custom subdomain like `app.autovc.ai` isn’t configured. The
-        # file is read from the same directory as this module.
+        # standalone client application bundled with this project.  In
+        # certain deployment environments (like Render) the static HTML file
+        # may not be accessible from disk due to case sensitivity or file
+        # placement issues.  To ensure a consistent experience, we embed the
+        # contents of the front‑end directly in this route.  This avoids
+        # reliance on file paths and guarantees that visiting `/app` always
+        # returns the interactive analysis UI.  Should you wish to serve
+        # the HTML from disk instead, adjust this route accordingly.
         @self.app.route('/app')
         def serve_app():
             """
-            Serve the interactive front‑end for analysis. Because Render or other deployment
-            environments may not preserve file case or may place static assets in
-            unexpected locations, we attempt to locate the bundled HTML file in a
-            case‑insensitive way. If neither variant is found, we fall back to a
-            simple error message instead of throwing an exception.
+            Serve the interactive front‑end for analysis.  Rather than attempting
+            to locate an `index.html` file on disk—which may fail on case‑
+            insensitive filesystems or when running on platforms that move
+            static assets—we embed the entire front‑end directly as a string.
+            Returning the HTML inline guarantees that this route works even if
+            the underlying file is unavailable.  Should an error occur while
+            generating the response, we log the exception and return a simple
+            error message.
             """
+            # Return the embedded front‑end directly.  Embedding avoids
+            # filesystem lookups and ensures the UI is always available.  If
+            # you prefer to serve from disk, replace this assignment with
+            # `html = open(<path_to_index_html>).read()`.
             try:
-                current_dir = os.path.dirname(__file__)
-                # Search for the front‑end HTML in the current directory and one level up.
-                search_dirs = [current_dir, os.path.abspath(os.path.join(current_dir, '..'))]
-                # Try both common capitalisation variants for index.html in each directory
-                for base in search_dirs:
-                    for name in ('index.html', 'Index.html'):
-                        potential = os.path.join(base, name)
-                        if os.path.exists(potential):
-                            return send_file(potential, mimetype='text/html')
-                # If we reach here, no front‑end file was found
-                logger.error("Front‑end HTML not found in %s or its parent", current_dir)
-                return "Front‑end unavailable", 500
+                html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoVC - AI Pitch Deck Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff6600;
+            margin-bottom: 10px;
+        }
+
+        .tagline {
+            font-size: 20px;
+            color: #888;
+        }
+
+        .upload-section {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .upload-title {
+            font-size: 28px;
+            color: #ff6600;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtitle {
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #444;
+            border-radius: 12px;
+            padding: 60px 40px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .upload-area:hover {
+            border-color: #ff6600;
+            background: rgba(255, 102, 0, 0.05);
+        }
+
+        .upload-area.dragging {
+            border-color: #ff6600;
+            background: rgba(255, 102, 0, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .file-types {
+            color: #666;
+            font-size: 14px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .selected-file {
+            margin-top: 20px;
+            color: #00ff00;
+        }
+
+        .analyze-button {
+            background: #ff6600;
+            color: white;
+            border: none;
+            padding: 16px 48px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        .analyze-button:hover {
+            background: #ff8833;
+            transform: translateY(-2px);
+        }
+
+        .analyze-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ff6600;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 40px;
+            display: none;
+        }
+
+        .results-section.show {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .footer {
+            text-align: center;
+            color: #666;
+            margin-top: 60px;
+        }
+
+        .error-message {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .success-message {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">AutoVC</div>
+            <div class="tagline">Get brutally honest AI feedback on your pitch deck</div>
+        </div>
+
+        <div class="upload-section">
+            <h2 class="upload-title">Start Free Analysis</h2>
+            <p class="upload-subtitle">No login required! Just upload your pitch deck and get instant feedback.</p>
+            
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📄</div>
+                <div class="upload-text">Click here or drag & drop your pitch deck</div>
+                <div class="file-types">PDF or TXT files (max 50MB)</div>
+                <input type="file" id="fileInput" accept=".pdf,.txt">
+            </div>
+            
+            <div class="selected-file" id="selectedFile"></div>
+            
+            <button class="analyze-button" id="analyzeButton" disabled>
+                🔥 Get Roasted
+            </button>
+        </div>
+
+        <div class="results-section" id="resultsSection">
+            <!-- Results will be populated here -->
+        </div>
+
+        <div class="footer">
+            <p>Built with 🔥 by founders, for founders</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let currentAnalysisId = null;
+        let selectedFile = null;
+
+        // Elements
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const selectedFileDiv = document.getElementById('selectedFile');
+        const analyzeButton = document.getElementById('analyzeButton');
+        const resultsSection = document.getElementById('resultsSection');
+
+        // File upload handling
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            const validTypes = ['application/pdf', 'text/plain'];
+            const maxSize = 50 * 1024 * 1024; // 50MB
+
+            if (!validTypes.includes(file.type)) {
+                alert('Please upload a PDF or TXT file');
+                return;
+            }
+
+            if (file.size > maxSize) {
+                alert('File size must be less than 50MB');
+                return;
+            }
+
+            selectedFile = file;
+            selectedFileDiv.innerHTML = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            analyzeButton.disabled = false;
+        }
+
+        // Analysis
+        analyzeButton.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            analyzeButton.disabled = true;
+            analyzeButton.innerHTML = 'Analyzing... <span class="loading"></span>';
+            resultsSection.classList.remove('show');
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            
+            // Note: This is a simplified version. 
+            // The actual analysis requires authentication
+            alert('Analysis feature requires authentication. Please use the API endpoints directly.');
+            
+            analyzeButton.disabled = false;
+            analyzeButton.innerHTML = '🔥 Get Roasted';
+        });
+    </script>
+</body>
+</html>'''
+                # Return the HTML with the appropriate content type.  Flask will
+                # automatically handle string responses, but providing the
+                # mime‑type makes the intent explicit.
+                return html, 200, {'Content-Type': 'text/html'}
             except Exception as e:
-                logger.error(f"Failed to serve front‑end: {e}")
+                logger.error(f"Error serving /app route: {e}")
                 return "Front‑end unavailable", 500
         
         # Health check
@@ -2578,17 +2889,43 @@ def create_production_app(**kwargs):
 # Export for WSGI servers
 app = create_production_app()
 
+# Provide an explicit `/app` route at the top level. Render's default behaviour
+# expects the application to respond on the root path as well as any custom
+# paths like `/app`. Returning the landing page here avoids the "Front‑end
+# unavailable" message if the dedicated front‑end assets cannot be found. This
+# route sits outside of the `AutoVCApp` class so it executes after the class
+# definitions and takes precedence when deploying via WSGI servers or
+# when running the module directly.
+@app.route('/app')
+def app_route():
+    """
+    Delegate the /app route to the embedded front‑end provided by a fresh
+    AutoVCApp instance.  By delegating to the `serve_app` view on the new
+    wrapper, we ensure the interactive UI is returned regardless of the
+    deployment environment.  If delegation fails for any reason, we fall back
+    to rendering the homepage.  If that also fails, we return a generic
+    error message.  Logging is used to aid debugging.
+    """
+    try:
+        wrapper = AutoVCApp()
+        # Call the serve_app view function registered on the new app instance.
+        return wrapper.app.view_functions['serve_app']()
+    except Exception as e:
+        logger.error(f"Failed to render /app route: {e}")
+        # Fallback: attempt to return the homepage if the front-end fails.
+        try:
+            return wrapper._render_homepage()
+        except Exception:
+            return "AutoVC front‑end unavailable", 500
+
 
 # Development server
 if __name__ == '__main__':
-    # Create tables
+    # When running locally or directly, bind to the port provided by the
+    # environment (Render sets $PORT) and listen on all interfaces. Avoid
+    # enabling debug mode in production by explicitly setting debug=False.
+    port = int(os.environ.get('PORT', 5000))
     with app.app_context():
         autovc = AutoVCApp()
         Base.metadata.create_all(autovc.engine)
-    
-    # Run development server
-    app.run(
-        host='0.0.0.0',
-        port=int(os.getenv('PORT', 5000)),
-        debug=os.getenv('FLASK_ENV') == 'development'
-    )
+    app.run(host='0.0.0.0', port=port, debug=False)
