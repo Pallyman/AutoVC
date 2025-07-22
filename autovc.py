@@ -1948,6 +1948,81 @@ class AutoVCApp:
                     'ALLOWED_EXTENSIONS': list(self.app.config.get('ALLOWED_EXTENSIONS', []))
                 }
             })
+
+        # ---------------------------------------------------------------------
+        # Pro analysis endpoint
+        #
+        # This endpoint returns a fabricated pro analysis for the given analysis
+        # identifier.  In a full implementation this would query stored
+        # analysis data and generate deeper insights, but for the free tier
+        # we return placeholder values based on the mock analysis.  The
+        # response structure matches what the front‑end expects: an
+        # `analysis` object with `market` and `founders` sections and a
+        # `pro_insights` object containing competitor analysis, market
+        # opportunity, financial projections and next steps.
+        @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
+        def pro_analysis(analysis_id: str):
+            """Return a generic pro analysis for demonstration purposes"""
+            try:
+                # Use the mock analysis for baseline values
+                mock = self._get_mock_analysis()
+                analysis_data = {
+                    'market': {
+                        'tam': mock.get('market_analysis', {}).get('tam', ''),
+                        'competition': mock.get('market_analysis', {}).get('competition', ''),
+                        'timing': mock.get('market_analysis', {}).get('timing', '')
+                    },
+                    'founders': {
+                        'strengths': mock.get('founder_assessment', {}).get('strengths', []),
+                        'weaknesses': mock.get('founder_assessment', {}).get('weaknesses', []),
+                        'missing': mock.get('founder_assessment', {}).get('missing', 'Not provided')
+                    }
+                }
+                pro_insights = {
+                    'competitor_analysis': {
+                        'main_competitors': [
+                            {
+                                'name': 'Competitor A',
+                                'strength': 'Strong brand recognition',
+                                'weakness': 'High burn rate'
+                            },
+                            {
+                                'name': 'Competitor B',
+                                'strength': 'Large user base',
+                                'weakness': 'Outdated technology'
+                            }
+                        ],
+                        'positioning': 'Differentiate by focusing on a niche market and superior customer service'
+                    },
+                    'market_opportunity': {
+                        'tam_breakdown': '$50M TAM in fragmented market segments',
+                        'sam': '$10M',
+                        'som': '$2M',
+                        'growth_rate': '15% CAGR'
+                    },
+                    'financial_projections': {
+                        'year_1': {'users': '1k', 'revenue': '$100k'},
+                        'year_2': {'users': '5k', 'revenue': '$500k'}
+                    },
+                    'next_steps': {
+                        'immediate': [
+                            'Focus on acquiring first 10 customers',
+                            'Refine product based on feedback'
+                        ],
+                        '30_days': [
+                            'Expand marketing efforts',
+                            'Begin outreach to potential investors'
+                        ],
+                        '90_days': [
+                            'Evaluate product‑market fit',
+                            'Plan for scaling infrastructure'
+                        ]
+                    }
+                }
+                return jsonify({'analysis': analysis_data, 'pro_insights': pro_insights})
+            except Exception as exc:
+                logger.error(f"Pro analysis generation error: {exc}")
+                return jsonify(error="Failed to generate pro analysis"), 500
         
         @self.app.route('/api/v2/pitch/<pitch_id>/voice-roast', methods=['POST'])
         @jwt_required()
