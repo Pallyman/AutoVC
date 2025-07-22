@@ -689,6 +689,21 @@ class AutoVCApp:
         @self.app.route('/')
         def index():
             return self._render_homepage()
+
+        # Serve the interactive analysis front‑end. This route delivers the
+        # standalone client application (index.html) bundled with this project.
+        # By using a relative URL here, users can access the analysis UI even
+        # when a custom subdomain like `app.autovc.ai` isn’t configured. The
+        # file is read from the same directory as this module.
+        @self.app.route('/app')
+        def serve_app():
+            try:
+                # Compute the absolute path to the bundled index.html
+                file_path = os.path.join(os.path.dirname(__file__), 'index.html')
+                return send_file(file_path, mimetype='text/html')
+            except Exception as e:
+                logger.error(f"Failed to serve front‑end: {e}")
+                return "Front‑end unavailable", 500
         
         # Health check
         @self.app.route('/health')
@@ -1456,7 +1471,7 @@ class AutoVCApp:
                          hasn’t been configured the link is broken. A relative path keeps the user
                          on the same site and allows the front‑end to function without a custom
                          subdomain. -->
-                    <a href="/" class="cta-button">Start Free Analysis</a>
+                    <a href="/app" class="cta-button">Start Free Analysis</a>
                 </section>
                 
                 <section class="features">
