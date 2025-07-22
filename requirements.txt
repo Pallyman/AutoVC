@@ -1,34 +1,22 @@
-# Core Flask
 Flask==2.3.3
 flask-cors==4.0.0
 flask-limiter==3.3.1
 flask-jwt-extended==4.5.2
-
-# Database
-SQLAlchemy==2.0.23
-psycopg2-binary==2.9.6  # For PostgreSQL
-
-# Security
+SQLAlchemy==2.0.41
+psycopg2-binary==2.9.6
 cryptography==41.0.3
-werkzeug==2.3.7
-
-# File Processing
+Werkzeug==2.3.7
 PyPDF2==3.0.1
 Pillow==10.4.0
-
-# AI Providers
 openai==0.28.1
-# groq==0.4.1  # Uncomment if using Groq
-# anthropic==0.3.0  # Uncomment if using Claude
-
-# Redis (for rate limiting)
 redis==5.0.0
-
-# Add these if enabling features:
-# whisper==1.1.10  # If ENABLE_WHISPER=true
-# elevenlabs==0.2.24  # If ENABLE_ELEVENLABS=true
-# stripe==6.6.0  # If using payments
-# boto3==1.28.57  # If using S3
-# resend==0.5.1  # If using email
-# prometheus-flask-exporter==0.22.4  # If using metrics
 gunicorn==21.2.0
+typing-extensions==4.14.1
+
+# Optional features
+# whisper==1.1.10            # If ENABLE_WHISPER=true
+# elevenlabs==0.2.24         # If ENABLE_ELEVENLABS=true
+# stripe==6.6.0              # If using payments
+# boto3==1.28.57             # If using S3
+# resend==0.5.1              # If using email
+# prometheus-flask-exporter==0.22.4  # If using metrics
