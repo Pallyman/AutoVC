@@ -1,0 +1,149 @@
+services:
+  # Web Service for AutoVC
+  - type: web
+    name: autovc
+    runtime: python
+    region: oregon # You can change to: ohio, frankfurt, singapore
+    plan: free # Change to 'starter' or 'standard' for production
+    
+    # Build configuration
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    
+    # Start command
+    startCommand: gunicorn autovc:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
+    
+    # Health check
+    healthCheckPath: /health
+    
+    # Auto-deploy from GitHub
+    autoDeploy: true
+    
+    # Environment variables
+    envVars:
+      # Python version
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      
+      # Flask configuration
+      - key: FLASK_ENV
+        value: production
+      
+      # Port (automatically set by Render)
+      - key: PORT
+        value: 5000
+      
+      # Database URL (automatically set by Render when database is created)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autovc-db
+          property: connectionString
+      
+      # Redis URL (optional - comment out if not using Redis)
+      # - key: REDIS_URL
+      #   fromService:
+      #     type: redis
+      #     name: autovc-redis
+      #     property: connectionString
+      
+      # Security keys (CHANGE THESE!)
+      - key: SECRET_KEY
+        generateValue: true # Render will generate a random value
+      
+      - key: JWT_SECRET_KEY
+        generateValue: true # Render will generate a random value
+      
+      # Encryption key - Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: ENCRYPTION_KEY
+        sync: false # Set this manually in Render dashboard
+      
+      # AI API Keys (set these in Render dashboard for security)
+      - key: OPENAI_API_KEY
+        sync: false # Set this manually in Render dashboard
+      
+      - key: GROQ_API_KEY
+        sync: false # Optional - Set if using Groq
+      
+      - key: ANTHROPIC_API_KEY
+        sync: false # Optional - Set if using Claude
+      
+      # Feature flags
+      - key: ENABLE_CLAUDE_ENHANCEMENT
+        value: "false"
+      
+      - key: ENABLE_WHISPER
+        value: "false"
+      
+      - key: ENABLE_ELEVENLABS
+        value: "false"
+      
+      # Frontend URL
+      - key: FRONTEND_URL
+        value: https://autovc.onrender.com # Update after deployment
+      
+      # Email configuration (optional)
+      - key: EMAIL_FROM
+        value: hello@autovc.ai
+      
+      # File upload settings
+      - key: UPLOAD_FOLDER
+        value: /tmp/autovc_uploads
+      
+      # Stripe keys (optional - for payments)
+      # - key: STRIPE_SECRET_KEY
+      #   sync: false
+      # - key: STRIPE_WEBHOOK_SECRET
+      #   sync: false
+      # - key: STRIPE_PUBLISHABLE_KEY
+      #   sync: false
+      
+      # AWS S3 (optional - for file storage)
+      # - key: AWS_ACCESS_KEY_ID
+      #   sync: false
+      # - key: AWS_SECRET_ACCESS_KEY
+      #   sync: false
+      # - key: AWS_S3_BUCKET
+      #   value: autovc-assets
+      # - key: AWS_REGION
+      #   value: us-east-1
+      
+      # Email service (optional)
+      # - key: RESEND_API_KEY
+      #   sync: false
+
+# PostgreSQL Database
+databases:
+  - name: autovc-db
+    databaseName: autovc
+    user: autovc
+    region: oregon # Should match your web service region
+    plan: free # Change to 'starter' or 'standard' for production
+    
+    # Database version
+    version: "15"
+    
+    # IP allow list (optional - for security)
+    ipAllowList: []
+    
+# Redis Instance (optional - uncomment if needed)
+# - type: redis
+#   name: autovc-redis
+#   region: oregon
+#   plan: free
+#   ipAllowList: []
+
+# Background Workers (optional - for async tasks)
+# - type: worker
+#   name: autovc-worker
+#   runtime: python
+#   region: oregon
+#   plan: free
+#   buildCommand: pip install -r requirements.txt
+#   startCommand: celery -A autovc.celery worker --loglevel=info
+#   envVars:
+#     - key: REDIS_URL
+#       fromService:
+#         type: redis
+#         name: autovc-redis
+#         property: connectionString

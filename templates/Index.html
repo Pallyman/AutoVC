@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoVC - AI Pitch Deck Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff6600;
+            margin-bottom: 10px;
+        }
+
+        .tagline {
+            font-size: 20px;
+            color: #888;
+        }
+
+        .upload-section {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .upload-title {
+            font-size: 28px;
+            color: #ff6600;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtitle {
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #444;
+            border-radius: 12px;
+            padding: 60px 40px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .upload-area:hover {
+            border-color: #ff6600;
+            background: rgba(255, 102, 0, 0.05);
+        }
+
+        .upload-area.dragging {
+            border-color: #ff6600;
+            background: rgba(255, 102, 0, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .file-types {
+            color: #666;
+            font-size: 14px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .selected-file {
+            margin-top: 20px;
+            color: #00ff00;
+        }
+
+        .analyze-button {
+            background: #ff6600;
+            color: white;
+            border: none;
+            padding: 16px 48px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        .analyze-button:hover {
+            background: #ff8833;
+            transform: translateY(-2px);
+        }
+
+        .analyze-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ff6600;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 40px;
+            display: none;
+        }
+
+        .results-section.show {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .verdict {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .decision {
+            font-size: 72px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .decision.fund {
+            color: #00ff00;
+        }
+
+        .decision.pass {
+            color: #ff4444;
+        }
+
+        .confidence {
+            font-size: 20px;
+            color: #888;
+            margin-bottom: 20px;
+        }
+
+        .hot-take {
+            font-size: 24px;
+            font-style: italic;
+            color: #ffa500;
+            background: rgba(255, 165, 0, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #ffa500;
+        }
+
+        .feedback-section {
+            margin: 40px 0;
+        }
+
+        .feedback-item {
+            margin-bottom: 30px;
+        }
+
+        .feedback-title {
+            font-size: 20px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .feedback-icon {
+            margin-right: 10px;
+            font-size: 24px;
+        }
+
+        .brutal-truth .feedback-title {
+            color: #ff6666;
+        }
+
+        .promising .feedback-title {
+            color: #66ff66;
+        }
+
+        .feedback-content {
+            color: #ccc;
+            line-height: 1.6;
+            padding-left: 34px;
+        }
+
+        .score-section {
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .overall-score {
+            font-size: 36px;
+            color: #ff6600;
+            font-weight: bold;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 40px;
+        }
+
+        .action-button {
+            padding: 12px 32px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .share-button {
+            background: #ff6600;
+            color: white;
+        }
+
+        .share-button:hover {
+            background: #ff8833;
+        }
+
+        .download-button {
+            background: transparent;
+            color: #ff6600;
+            border: 2px solid #ff6600;
+        }
+
+        .download-button:hover {
+            background: #ff6600;
+            color: white;
+        }
+
+        .upgrade-button {
+            background: #6b46c1;
+            color: white;
+        }
+
+        .upgrade-button:hover {
+            background: #7c3aed;
+        }
+
+        .meme-card {
+            margin: 40px 0;
+            text-align: center;
+        }
+
+        .meme-card img {
+            max-width: 100%;
+            max-height: 600px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .footer {
+            text-align: center;
+            color: #666;
+            margin-top: 60px;
+        }
+
+        .error-message {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .success-message {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .pro-section {
+            background: linear-gradient(135deg, #6b46c1 0%, #ff6600 100%);
+            border-radius: 16px;
+            padding: 40px;
+            margin: 40px 0;
+            display: none;
+        }
+
+        .pro-section.show {
+            display: block;
+        }
+
+        .pro-title {
+            font-size: 32px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .pro-content {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 30px;
+        }
+
+        .pro-subsection {
+            margin-bottom: 30px;
+        }
+
+        .pro-subsection h3 {
+            color: #ffa500;
+            margin-bottom: 15px;
+        }
+
+        .pro-list {
+            list-style: none;
+            padding-left: 20px;
+        }
+
+        .pro-list li {
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .pro-list li:before {
+            content: "→";
+            position: absolute;
+            left: -20px;
+            color: #ff6600;
+        }
+
+        .competitor-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .financial-table {
+            width: 100%;
+            margin-top: 15px;
+        }
+
+        .financial-table td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .financial-table td:first-child {
+            font-weight: bold;
+            color: #ffa500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">AutoVC</div>
+            <div class="tagline">Get brutally honest AI feedback on your pitch deck</div>
+        </div>
+
+        <div class="upload-section">
+            <h2 class="upload-title">Start Free Analysis</h2>
+            <p class="upload-subtitle">No login required! Just upload your pitch deck and get instant feedback.</p>
+            
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📄</div>
+                <div class="upload-text">Click here or drag & drop your pitch deck</div>
+                <div class="file-types">PDF or TXT files (max 50MB)</div>
+                <input type="file" id="fileInput" accept=".pdf,.txt">
+            </div>
+            
+            <div class="selected-file" id="selectedFile"></div>
+            
+            <button class="analyze-button" id="analyzeButton" disabled>
+                🔥 Get Roasted
+            </button>
+        </div>
+
+        <div class="results-section" id="resultsSection">
+            <div id="analysisSuccess" class="success-message" style="display: none;">
+                ✅ Analysis complete!
+            </div>
+            
+            <div class="verdict">
+                <div class="decision" id="decision"></div>
+                <div class="confidence" id="confidence"></div>
+                <div class="hot-take" id="hotTake"></div>
+            </div>
+
+            <div class="feedback-section">
+                <div class="feedback-item brutal-truth">
+                    <div class="feedback-title">
+                        <span class="feedback-icon">💣</span>
+                        The Brutal Truth
+                    </div>
+                    <div class="feedback-content" id="brutalTruth"></div>
+                </div>
+
+                <div class="feedback-item promising">
+                    <div class="feedback-title">
+                        <span class="feedback-icon">✨</span>
+                        What's Promising
+                    </div>
+                    <div class="feedback-content" id="promising"></div>
+                </div>
+            </div>
+
+            <div class="score-section">
+                <div class="overall-score" id="overallScore"></div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="action-button share-button" id="shareButton">
+                    Share Your Roast 🔥
+                </button>
+                <button class="action-button download-button" id="downloadButton">
+                    Download Meme
+                </button>
+                <button class="action-button upgrade-button" id="upgradeButton">
+                    See Pro Analysis 🚀
+                </button>
+            </div>
+
+            <div class="meme-card" id="memeCard"></div>
+        </div>
+
+        <div class="pro-section" id="proSection">
+            <h2 class="pro-title">🚀 Pro Analysis</h2>
+            <div class="pro-content" id="proContent"></div>
+        </div>
+
+        <div class="footer">
+            <p>Built with 🔥 by founders, for founders</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let currentAnalysisId = null;
+        let selectedFile = null;
+
+        // Elements
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const selectedFileDiv = document.getElementById('selectedFile');
+        const analyzeButton = document.getElementById('analyzeButton');
+        const resultsSection = document.getElementById('resultsSection');
+        const shareButton = document.getElementById('shareButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const upgradeButton = document.getElementById('upgradeButton');
+        const proSection = document.getElementById('proSection');
+
+        // File upload handling
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            const validTypes = ['application/pdf', 'text/plain'];
+            const maxSize = 50 * 1024 * 1024; // 50MB
+
+            if (!validTypes.includes(file.type)) {
+                alert('Please upload a PDF or TXT file');
+                return;
+            }
+
+            if (file.size > maxSize) {
+                alert('File size must be less than 50MB');
+                return;
+            }
+
+            selectedFile = file;
+            selectedFileDiv.innerHTML = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            analyzeButton.disabled = false;
+        }
+
+        // Analysis
+        analyzeButton.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            analyzeButton.disabled = true;
+            analyzeButton.innerHTML = 'Analyzing... <span class="loading"></span>';
+            resultsSection.classList.remove('show');
+            proSection.classList.remove('show');
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('is_public', 'true');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/analyze`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                    document.getElementById('analysisSuccess').style.display = 'block';
+                } else {
+                    alert(data.error || 'Analysis failed');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to analyze pitch deck. Please try again.');
+            } finally {
+                analyzeButton.disabled = false;
+                analyzeButton.innerHTML = '🔥 Get Roasted';
+            }
+        });
+
+        function displayResults(data) {
+            currentAnalysisId = data.analysis_id;
+            
+            // Verdict
+            const decision = document.getElementById('decision');
+            decision.textContent = data.verdict.decision;
+            decision.className = `decision ${data.verdict.decision.toLowerCase()}`;
+            
+            document.getElementById('confidence').textContent = `Confidence: ${data.verdict.confidence}%`;
+            document.getElementById('hotTake').textContent = `"${data.verdict.hot_take}"`;
+            
+            // Feedback
+            document.getElementById('brutalTruth').textContent = data.feedback.brutal_truth;
+            document.getElementById('promising').textContent = data.feedback.encouragement;
+            
+            // Score
+            document.getElementById('overallScore').textContent = `Overall Score: ${data.benchmarks.overall_score}/10`;
+            
+            // Meme card
+            if (data.meme_card_url) {
+                const memeCard = document.getElementById('memeCard');
+                memeCard.innerHTML = `<img src="${data.meme_card_url}" alt="AutoVC Roast Card">`;
+            }
+            
+            resultsSection.classList.add('show');
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Share functionality
+        shareButton.addEventListener('click', async () => {
+            const shareData = {
+                title: 'My AutoVC Pitch Roast',
+                text: `I got roasted by AutoVC! Check out my pitch analysis.`,
+                url: `${window.location.origin}/analysis/${currentAnalysisId}`
+            };
+
+            try {
+                if (navigator.share) {
+                    await navigator.share(shareData);
+                } else {
+                    // Fallback - copy to clipboard
+                    await navigator.clipboard.writeText(shareData.url);
+                    alert('Link copied to clipboard!');
+                }
+            } catch (err) {
+                console.error('Error sharing:', err);
+            }
+        });
+
+        // Download meme
+        downloadButton.addEventListener('click', async () => {
+            if (!currentAnalysisId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/download-meme/${currentAnalysisId}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `autovc_roast_${currentAnalysisId.substring(0, 8)}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    alert('Failed to download meme');
+                }
+            } catch (error) {
+                console.error('Error downloading meme:', error);
+                alert('Failed to download meme');
+            }
+        });
+
+        // Upgrade to Pro
+        upgradeButton.addEventListener('click', async () => {
+            if (!currentAnalysisId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/pro-analysis/${currentAnalysisId}`);
+                
+                if (response.ok) {
+                    const proData = await response.json();
+                    displayProAnalysis(proData);
+                } else {
+                    alert('Failed to load pro analysis');
+                }
+            } catch (error) {
+                console.error('Error loading pro analysis:', error);
+                alert('Failed to load pro analysis');
+            }
+        });
+
+        function displayProAnalysis(data) {
+            const proContent = document.getElementById('proContent');
+            
+            let html = `
+                <div class="pro-subsection">
+                    <h3>🎯 Market Analysis</h3>
+                    <p><strong>TAM:</strong> ${data.analysis.market.tam}</p>
+                    <p><strong>Competition:</strong> ${data.analysis.market.competition}</p>
+                    <p><strong>Timing:</strong> ${data.analysis.market.timing}</p>
+                </div>
+
+                <div class="pro-subsection">
+                    <h3>👥 Founder Assessment</h3>
+                    <p><strong>Strengths:</strong></p>
+                    <ul class="pro-list">
+                        ${data.analysis.founders.strengths.map(s => `<li>${s}</li>`).join('')}
+                    </ul>
+                    <p><strong>Weaknesses:</strong></p>
+                    <ul class="pro-list">
+                        ${data.analysis.founders.weaknesses.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                    <p><strong>Missing:</strong> ${data.analysis.founders.missing}</p>
+                </div>
+            `;
+
+            if (data.pro_insights) {
+                html += `
+                    <div class="pro-subsection">
+                        <h3>🏆 Competitor Analysis</h3>
+                        ${data.pro_insights.competitor_analysis.main_competitors.map(c => `
+                            <div class="competitor-card">
+                                <strong>${c.name}</strong><br>
+                                ✅ Strength: ${c.strength}<br>
+                                ❌ Weakness: ${c.weakness}
+                            </div>
+                        `).join('')}
+                        <p><strong>Your Positioning:</strong> ${data.pro_insights.competitor_analysis.positioning}</p>
+                    </div>
+
+                    <div class="pro-subsection">
+                        <h3>💰 Market Opportunity</h3>
+                        <p><strong>TAM:</strong> ${data.pro_insights.market_opportunity.tam_breakdown}</p>
+                        <p><strong>SAM:</strong> ${data.pro_insights.market_opportunity.sam}</p>
+                        <p><strong>SOM:</strong> ${data.pro_insights.market_opportunity.som}</p>
+                        <p><strong>Growth Rate:</strong> ${data.pro_insights.market_opportunity.growth_rate}</p>
+                    </div>
+
+                    <div class="pro-subsection">
+                        <h3>📊 Financial Projections</h3>
+                        <table class="financial-table">
+                            <tr>
+                                <td>Year 1</td>
+                                <td>Users: ${data.pro_insights.financial_projections.year_1.users}</td>
+                                <td>Revenue: ${data.pro_insights.financial_projections.year_1.revenue}</td>
+                            </tr>
+                            <tr>
+                                <td>Year 2</td>
+                                <td>Users: ${data.pro_insights.financial_projections.year_2.users}</td>
+                                <td>Revenue: ${data.pro_insights.financial_projections.year_2.revenue}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="pro-subsection">
+                        <h3>🚀 Next Steps</h3>
+                        <p><strong>Immediate (Do Now):</strong></p>
+                        <ul class="pro-list">
+                            ${data.pro_insights.next_steps.immediate.map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                        <p><strong>30 Days:</strong></p>
+                        <ul class="pro-list">
+                            ${data.pro_insights.next_steps['30_days'].map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                        <p><strong>90 Days:</strong></p>
+                        <ul class="pro-list">
+                            ${data.pro_insights.next_steps['90_days'].map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            proContent.innerHTML = html;
+            proSection.classList.add('show');
+            proSection.scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
