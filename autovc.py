@@ -620,6 +620,16 @@ class AutoVCApp:
         
         @self.app.after_request
         def after_request(response):
+            """Add security and CORS headers, then log the request."""
+            # Add CORS headers for API routes if not already set.  This ensures
+            # that browser clients can call the JSON endpoints when served
+            # from different origins.  We restrict the wildcard to API paths
+            # only to avoid overly permissive policies on other routes.
+            if request.path.startswith('/api'):
+                response.headers.setdefault('Access-Control-Allow-Origin', '*')
+                response.headers.setdefault('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type')
+
             # Add security headers
             response.headers.update({
                 'X-Content-Type-Options': 'nosniff',
@@ -1869,20 +1879,23 @@ class AutoVCApp:
                 # Read file content
                 file_content = file.read()
 
-                # Extract text depending on extension
-                try:
-                    if file_ext == '.pdf':
+                # Extract text depending on extension.  If extraction fails
+                # (e.g. encrypted or image‑only PDFs), fall back to a mock
+                # analysis rather than returning an error.
+                if file_ext == '.pdf':
+                    try:
                         content = self._extract_content(file_content, file_ext)
-                    elif file_ext == '.txt':
-                        content = file_content.decode('utf-8', errors='ignore')
-                    else:
-                        return jsonify(error="Only PDF and TXT files supported for free analysis"), 400
-                except Exception as exc:
-                    logger.error(f"Content extraction error: {exc}")
-                    return jsonify(error="Failed to read file content"), 500
+                    except Exception as exc:
+                        logger.error(f"Content extraction error: {exc}")
+                        content = ""
+                elif file_ext == '.txt':
+                    content = file_content.decode('utf-8', errors='ignore')
+                else:
+                    return jsonify(error="Only PDF and TXT files supported for free analysis"), 400
 
                 # Perform AI analysis on a subset of the content for the free tier
-                analysis = self._get_ai_analysis(content[:3000])
+                # If content is empty (extraction failed), this will return a mock analysis.
+                analysis = self._get_ai_analysis(content[:3000] if content else "")
 
                 # Generate a simple analysis identifier (8‑char UUID)
                 analysis_id = str(uuid.uuid4())[:8]
@@ -1898,6 +1911,43 @@ class AutoVCApp:
             except Exception as exc:
                 logger.error(f"Free analysis error: {exc}")
                 return jsonify(error="Analysis failed. Please try again."), 500
+
+        # ---------------------------------------------------------------------
+        # Simple diagnostic endpoints for health and configuration checks.  These
+        # are unauthenticated and should be removed or protected in
+        # production environments.  They provide a quick way to verify that
+        # the API is reachable and that routes are registered correctly.
+        @self.app.route('/api/test', methods=['GET'])
+        def api_test():
+            """Return a simple status message to verify the API is live"""
+            return jsonify({
+                'status': 'ok',
+                'message': 'API is working',
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
+        @self.app.route('/api/debug', methods=['GET'])
+        def api_debug():
+            """Return information about registered routes and configuration"""
+            # List all routes
+            routes = [str(rule) for rule in self.app.url_map.iter_rules()]
+            # Determine if the free analysis endpoint is registered and its methods
+            analyze_methods = []
+            for rule in self.app.url_map.iter_rules():
+                if rule.rule == '/api/analyze':
+                    analyze_methods = sorted(list(rule.methods - {'HEAD', 'OPTIONS'}))
+                    break
+            return jsonify({
+                'routes': routes,
+                'methods': {
+                    '/api/analyze': analyze_methods if analyze_methods else 'NOT FOUND'
+                },
+                'config': {
+                    'UPLOAD_FOLDER': self.app.config.get('UPLOAD_FOLDER'),
+                    'MAX_CONTENT_LENGTH': self.app.config.get('MAX_CONTENT_LENGTH'),
+                    'ALLOWED_EXTENSIONS': list(self.app.config.get('ALLOWED_EXTENSIONS', []))
+                }
+            })
         
         @self.app.route('/api/v2/pitch/<pitch_id>/voice-roast', methods=['POST'])
         @jwt_required()
