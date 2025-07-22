@@ -20,3 +20,4 @@ typing-extensions==4.14.1
 # boto3==1.28.57             # If using S3
 # resend==0.5.1              # If using email
 # prometheus-flask-exporter==0.22.4  # If using metrics
+bleach==6.1.0
