@@ -697,10 +697,26 @@ class AutoVCApp:
         # file is read from the same directory as this module.
         @self.app.route('/app')
         def serve_app():
+            """
+            Serve the interactive front‑end for analysis. Because Render or other deployment
+            environments may not preserve file case or may place static assets in
+            unexpected locations, we attempt to locate the bundled HTML file in a
+            case‑insensitive way. If neither variant is found, we fall back to a
+            simple error message instead of throwing an exception.
+            """
             try:
-                # Compute the absolute path to the bundled index.html
-                file_path = os.path.join(os.path.dirname(__file__), 'index.html')
-                return send_file(file_path, mimetype='text/html')
+                current_dir = os.path.dirname(__file__)
+                # Search for the front‑end HTML in the current directory and one level up.
+                search_dirs = [current_dir, os.path.abspath(os.path.join(current_dir, '..'))]
+                # Try both common capitalisation variants for index.html in each directory
+                for base in search_dirs:
+                    for name in ('index.html', 'Index.html'):
+                        potential = os.path.join(base, name)
+                        if os.path.exists(potential):
+                            return send_file(potential, mimetype='text/html')
+                # If we reach here, no front‑end file was found
+                logger.error("Front‑end HTML not found in %s or its parent", current_dir)
+                return "Front‑end unavailable", 500
             except Exception as e:
                 logger.error(f"Failed to serve front‑end: {e}")
                 return "Front‑end unavailable", 500
