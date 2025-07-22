@@ -1451,7 +1451,12 @@ class AutoVCApp:
                         Upload your pitch deck and get brutally honest AI feedback that actually helps. 
                         No sugarcoating, just actionable insights to make your pitch fundable.
                     </p>
-                    <a href="https://app.autovc.ai" class="cta-button">Start Free Analysis</a>
+                    <!-- Use a relative link so the CTA always stays within the current domain.
+                         Previously this pointed at https://app.autovc.ai, but if that domain
+                         hasn’t been configured the link is broken. A relative path keeps the user
+                         on the same site and allows the front‑end to function without a custom
+                         subdomain. -->
+                    <a href="/" class="cta-button">Start Free Analysis</a>
                 </section>
                 
                 <section class="features">
