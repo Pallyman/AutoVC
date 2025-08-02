@@ -386,6 +386,17 @@
             margin-bottom: 10px;
         }
 
+        .competitor-card h4 {
+            color: #ff6600;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        .competitor-card p {
+            margin: 5px 0;
+            line-height: 1.6;
+        }
+
         .financial-table {
             width: 100%;
             margin-top: 15px;
@@ -709,15 +720,20 @@
                 </div>
             `;
 
-            if (data.pro_insights) {
+            if (data.pro_insights && data.pro_insights.competitor_analysis) {
                 html += `
                     <div class="pro-subsection">
                         <h3>🏆 Competitor Analysis</h3>
                         ${data.pro_insights.competitor_analysis.main_competitors.map(c => `
                             <div class="competitor-card">
-                                <strong>${c.name}</strong><br>
-                                ✅ Strength: ${c.strength}<br>
-                                ❌ Weakness: ${c.weakness}
+                                <h4>${c.name}</h4>
+                                <p>✅ <strong>Strength:</strong> ${c.strength}</p>
+                                <p>❌ <strong>Weakness:</strong> ${c.weakness}</p>
+                                <p>📊 <strong>Market Share:</strong> ${c.market_share}</p>
+                                <p>💰 <strong>Funding:</strong> ${c.funding}</p>
+                                <p>🎯 <strong>Key Differentiator:</strong> ${c.key_differentiator}</p>
+                                <p>⚠️ <strong>Vulnerability:</strong> ${c.vulnerability}</p>
+                                <p>📰 <strong>Recent Moves:</strong> ${c.recent_moves}</p>
                             </div>
                         `).join('')}
                         <p><strong>Your Positioning:</strong> ${data.pro_insights.competitor_analysis.positioning}</p>

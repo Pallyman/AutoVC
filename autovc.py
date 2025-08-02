@@ -1117,6 +1117,17 @@ class AutoVCApp:
             margin-bottom: 10px;
         }
 
+        .competitor-card h4 {
+            color: #ff6600;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        .competitor-card p {
+            margin: 5px 0;
+            line-height: 1.6;
+        }
+
         .financial-table {
             width: 100%;
             margin-top: 15px;
@@ -1440,15 +1451,20 @@ class AutoVCApp:
                 </div>
             `;
 
-            if (data.pro_insights) {
+            if (data.pro_insights && data.pro_insights.competitor_analysis) {
                 html += `
                     <div class="pro-subsection">
                         <h3>🏆 Competitor Analysis</h3>
                         ${data.pro_insights.competitor_analysis.main_competitors.map(c => `
                             <div class="competitor-card">
-                                <strong>${c.name}</strong><br>
-                                ✅ Strength: ${c.strength}<br>
-                                ❌ Weakness: ${c.weakness}
+                                <h4>${c.name}</h4>
+                                <p>✅ <strong>Strength:</strong> ${c.strength}</p>
+                                <p>❌ <strong>Weakness:</strong> ${c.weakness}</p>
+                                <p>📊 <strong>Market Share:</strong> ${c.market_share}</p>
+                                <p>💰 <strong>Funding:</strong> ${c.funding}</p>
+                                <p>🎯 <strong>Key Differentiator:</strong> ${c.key_differentiator}</p>
+                                <p>⚠️ <strong>Vulnerability:</strong> ${c.vulnerability}</p>
+                                <p>📰 <strong>Recent Moves:</strong> ${c.recent_moves}</p>
                             </div>
                         `).join('')}
                         <p><strong>Your Positioning:</strong> ${data.pro_insights.competitor_analysis.positioning}</p>
@@ -1906,6 +1922,18 @@ class AutoVCApp:
                 # Generate a simple analysis identifier (8‑char UUID)
                 analysis_id = str(uuid.uuid4())[:8]
 
+                # Cache the analysis for pro features if Redis is available
+                if self.redis_client and analysis_id:
+                    try:
+                        # Cache the analysis with a 1 hour expiry for future pro insights
+                        self.redis_client.setex(
+                            f"analysis:{analysis_id}",
+                            3600,
+                            json.dumps(analysis)
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to cache analysis: {e}")
+
                 # Return the analysis results without persistence or pro data
                 return jsonify({
                     'analysis_id': analysis_id,
@@ -1968,67 +1996,49 @@ class AutoVCApp:
         # opportunity, financial projections and next steps.
         @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
         def pro_analysis(analysis_id: str):
-            """Return a generic pro analysis for demonstration purposes"""
+            """Return pro analysis from the AI-generated data"""
             try:
-                # Use the mock analysis for baseline values
-                mock = self._get_mock_analysis()
-                analysis_data = {
-                    'market': {
-                        'tam': mock.get('market_analysis', {}).get('tam', ''),
-                        'competition': mock.get('market_analysis', {}).get('competition', ''),
-                        'timing': mock.get('market_analysis', {}).get('timing', '')
-                    },
-                    'founders': {
-                        'strengths': mock.get('founder_assessment', {}).get('strengths', []),
-                        'weaknesses': mock.get('founder_assessment', {}).get('weaknesses', []),
-                        'missing': mock.get('founder_assessment', {}).get('missing', 'Not provided')
-                    }
-                }
-                pro_insights = {
-                    'competitor_analysis': {
-                        'main_competitors': [
-                            {
-                                'name': 'Competitor A',
-                                'strength': 'Strong brand recognition',
-                                'weakness': 'High burn rate'
+                # For free tier demo, check if we have the analysis in session/cache
+                # In production, you'd fetch this from database using analysis_id
+
+                # Try to get from Redis cache if available
+                cached_analysis = None
+                if self.redis_client:
+                    try:
+                        cached_analysis = self.redis_client.get(f"analysis:{analysis_id}")
+                        if cached_analysis:
+                            cached_analysis = json.loads(cached_analysis)
+                    except Exception:
+                        pass
+
+                if cached_analysis and 'pro_analysis' in cached_analysis:
+                    # Return the pro analysis section from cached AI response
+                    return jsonify({
+                        'analysis': {
+                            'market': {
+                                'tam': cached_analysis.get('market_analysis', {}).get('tam', ''),
+                                'competition': cached_analysis.get('market_analysis', {}).get('competition', ''),
+                                'timing': cached_analysis.get('market_analysis', {}).get('timing', '')
                             },
-                            {
-                                'name': 'Competitor B',
-                                'strength': 'Large user base',
-                                'weakness': 'Outdated technology'
+                            'founders': {
+                                'strengths': cached_analysis.get('founder_assessment', {}).get('strengths', []),
+                                'weaknesses': cached_analysis.get('founder_assessment', {}).get('weaknesses', []),
+                                'missing': 'See detailed assessment below'
                             }
-                        ],
-                        'positioning': 'Differentiate by focusing on a niche market and superior customer service'
-                    },
-                    'market_opportunity': {
-                        'tam_breakdown': '$50M TAM in fragmented market segments',
-                        'sam': '$10M',
-                        'som': '$2M',
-                        'growth_rate': '15% CAGR'
-                    },
-                    'financial_projections': {
-                        'year_1': {'users': '1k', 'revenue': '$100k'},
-                        'year_2': {'users': '5k', 'revenue': '$500k'}
-                    },
-                    'next_steps': {
-                        'immediate': [
-                            'Focus on acquiring first 10 customers',
-                            'Refine product based on feedback'
-                        ],
-                        '30_days': [
-                            'Expand marketing efforts',
-                            'Begin outreach to potential investors'
-                        ],
-                        '90_days': [
-                            'Evaluate product‑market fit',
-                            'Plan for scaling infrastructure'
-                        ]
-                    }
-                }
-                return jsonify({'analysis': analysis_data, 'pro_insights': pro_insights})
+                        },
+                        'pro_insights': cached_analysis.get('pro_analysis', {})
+                    })
+
+                # Fallback: Generate a new analysis with pro insights
+                # This would ideally fetch the original pitch content and re-analyze
+                return jsonify({
+                    'error': 'Pro analysis not found. Please analyze your pitch again to get pro insights.',
+                    'analysis_id': analysis_id
+                }), 404
+
             except Exception as exc:
-                logger.error(f"Pro analysis generation error: {exc}")
-                return jsonify(error="Failed to generate pro analysis"), 500
+                logger.error(f"Pro analysis retrieval error: {exc}")
+                return jsonify(error="Failed to retrieve pro analysis"), 500
         
         @self.app.route('/api/v2/pitch/<pitch_id>/voice-roast', methods=['POST'])
         @jwt_required()
@@ -2911,9 +2921,159 @@ class AutoVCApp:
     
     def _get_analysis_prompt(self) -> str:
         """Get the analysis prompt for AI"""
-        # Updated prompt returns early; the original prompt remains below for reference but will not execute.
         return """You are a brutally honest venture capitalist reviewing pitch decks in 2025. 
         Your job is to provide tough but constructive feedback that actually helps founders improve.
+        
+        CRITICAL REQUIREMENTS FOR LENGTH:
+        - "brutal_truth": MUST be 150-200 words. Be specific about why they'll fail.
+        - "encouragement": MUST be 150-200 words. Find genuine strengths to build on.
+        - "tam": MUST be 100-150 words. Include market size, growth rates, and segments.
+        - "competition": MUST be 100-150 words. Name specific competitors and their advantages.
+        - "timing": MUST be 100-150 words. Explain market catalysts or lack thereof.
+        - Each item in lists should be a complete sentence, not just fragments.
+        
+        SCORING RULES:
+        - Calculate overall_score as the average of market_score, team_score, product_score, and business_score
+        - If overall_score >= 7, decision = "FUND", else decision = "PASS"
+        - Calculate confidence as: overall_score * 10 (so a score of 7.5 = 75% confidence)
+        
+        PRO ANALYSIS REQUIREMENTS:
+        - Include a "pro_analysis" section with deeper insights
+        - Each competitor analysis must include 7 detailed fields
+        - Next steps must have 5 items each for immediate/30_days/90_days periods
+        
+        Analyze the pitch and respond with ONLY a JSON object in this exact format:
+        
+        {
+            "verdict": {
+                "decision": "FUND" or "PASS" (FUND only if overall_score >= 7),
+                "confidence": 1-100 (should equal overall_score * 10),
+                "hot_take": "A memorable, quotable one-liner that captures the essence",
+                "reasoning": "2-3 sentence explanation of your decision"
+            },
+            "market_analysis": {
+                "tam": "Total addressable market assessment. Include specific dollar amounts, growth percentages, market segments, geographic considerations, and adjacent opportunities. Discuss both current and future market potential. Must be 100-150 words.",
+                "competition": "Detailed competitive landscape analysis. Name specific competitors, their market share, funding, strengths and weaknesses. Discuss competitive moats and barriers to entry. Must be 100-150 words.",
+                "timing": "Comprehensive market timing assessment. Explain current catalysts, regulatory changes, technology shifts, and macro trends. Why is now the right or wrong time? Must be 100-150 words.",
+                "score": 1-10
+            },
+            "founder_assessment": {
+                "strengths": ["Complete sentence about specific strength #1", "Complete sentence about specific strength #2", "Complete sentence about specific strength #3"],
+                "weaknesses": ["Complete sentence about specific weakness #1", "Complete sentence about specific weakness #2"],
+                "domain_expertise": 1-10,
+                "execution_ability": 1-10
+            },
+            "product_analysis": {
+                "problem_validation": "2-3 sentences on problem understanding and validation",
+                "solution_fit": "2-3 sentences on solution-problem fit",
+                "differentiation": "2-3 sentences on unique value proposition",
+                "score": 1-10
+            },
+            "business_model": {
+                "revenue_model": "2-3 sentences on monetization strategy",
+                "unit_economics": "2-3 sentences on CAC, LTV, margins",
+                "scalability": "2-3 sentences on growth potential",
+                "score": 1-10
+            },
+            "benchmarks": {
+                "market_score": 1-10,
+                "team_score": 1-10 (average of domain_expertise and execution_ability),
+                "product_score": 1-10,
+                "business_score": 1-10,
+                "overall_score": 1-10 (MUST be the average of the four scores above)
+            },
+            "feedback": {
+                "brutal_truth": "The hardest truths they need to hear. Be specific about their weaknesses, unrealistic assumptions, and why most investors will pass. Include concrete examples of where they're falling short and what the real challenges are. Don't sugarcoat - they need to hear this. Must be 150-200 words.",
+                "key_risks": [
+                    "Detailed risk #1 with specific impact and likelihood",
+                    "Detailed risk #2 with specific impact and likelihood",
+                    "Detailed risk #3 with specific impact and likelihood"
+                ],
+                "action_items": [
+                    "Specific action #1 with timeline and success metric",
+                    "Specific action #2 with timeline and success metric",
+                    "Specific action #3 with timeline and success metric"
+                ],
+                "encouragement": "What's genuinely promising about this opportunity. Highlight their real strengths, unique insights, and potential for success. Be specific about what they're doing right and how they could build on these advantages. Give them hope while staying honest. Must be 150-200 words."
+            },
+            "pro_analysis": {
+                "competitor_analysis": {
+                    "main_competitors": [
+                        {
+                            "name": "Specific Competitor Name #1",
+                            "strength": "Their main competitive advantage",
+                            "weakness": "Their main vulnerability",
+                            "market_share": "X%",
+                            "funding": "$XM raised",
+                            "key_differentiator": "What makes them unique",
+                            "vulnerability": "Where they can be beaten",
+                            "recent_moves": "Their latest strategic action"
+                        },
+                        {
+                            "name": "Specific Competitor Name #2",
+                            "strength": "Their main competitive advantage",
+                            "weakness": "Their main vulnerability",
+                            "market_share": "X%",
+                            "funding": "$XM raised",
+                            "key_differentiator": "What makes them unique",
+                            "vulnerability": "Where they can be beaten",
+                            "recent_moves": "Their latest strategic action"
+                        },
+                        {
+                            "name": "Specific Competitor Name #3",
+                            "strength": "Their main competitive advantage",
+                            "weakness": "Their main vulnerability",
+                            "market_share": "X%",
+                            "funding": "$XM raised",
+                            "key_differentiator": "What makes them unique",
+                            "vulnerability": "Where they can be beaten",
+                            "recent_moves": "Their latest strategic action"
+                        }
+                    ],
+                    "positioning": "Detailed strategy for how to position against these competitors. 2-3 sentences."
+                },
+                "market_opportunity": {
+                    "tam_breakdown": "Detailed TAM analysis with specific segments and growth rates",
+                    "sam": "Serviceable addressable market with justification",
+                    "som": "Realistic obtainable market share in 2-3 years",
+                    "growth_rate": "Expected CAGR with reasoning"
+                },
+                "financial_projections": {
+                    "year_1": {"users": "X", "revenue": "$X"},
+                    "year_2": {"users": "X", "revenue": "$X"},
+                    "year_3": {"users": "X", "revenue": "$X"}
+                },
+                "next_steps": {
+                    "immediate": [
+                        "Specific action #1 with metrics and timeline",
+                        "Specific action #2 with metrics and timeline",
+                        "Specific action #3 with metrics and timeline",
+                        "Specific action #4 with metrics and timeline",
+                        "Specific action #5 with metrics and timeline"
+                    ],
+                    "30_days": [
+                        "30-day action #1 with expected outcome",
+                        "30-day action #2 with expected outcome",
+                        "30-day action #3 with expected outcome",
+                        "30-day action #4 with expected outcome",
+                        "30-day action #5 with expected outcome"
+                    ],
+                    "90_days": [
+                        "90-day milestone #1 with success criteria",
+                        "90-day milestone #2 with success criteria",
+                        "90-day milestone #3 with success criteria",
+                        "90-day milestone #4 with success criteria",
+                        "90-day milestone #5 with success criteria"
+                    ]
+                }
+            }
+        }
+        
+        IMPORTANT: 
+        - The confidence percentage MUST equal overall_score * 10
+        - Include specific company/competitor names when possible
+        - All monetary values should include currency symbols
+        - All lists must have the exact number of items specified
 
         CRITICAL REQUIREMENTS FOR LENGTH:
         - "brutal_truth": MUST be 150-200 words. Be specific about why they'll fail.
