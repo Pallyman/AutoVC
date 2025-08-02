@@ -17,7 +17,7 @@ from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 
 # Flask and extensions
-from flask import Flask, request, jsonify, g, send_file, Response
+from flask import Flask, request, jsonify, g, send_file, Response, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
@@ -721,6 +721,11 @@ class AutoVCApp:
             generating the response, we log the exception and return a simple
             error message.
             """
+            # Render the interactive analysis front‑end using a Flask template.
+            # The remainder of this function (which embedded a large HTML string)
+            # will not be executed.
+            return render_template('app.html')
+
             # Return the embedded front‑end directly.  Embedding avoids
             # filesystem lookups and ensures the UI is always available.  If
             # you prefer to serve from disk, replace this assignment with
@@ -2299,240 +2304,10 @@ class AutoVCApp:
     
     # Helper methods
     def _render_homepage(self):
-        """Render homepage HTML"""
-        return '''
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>AutoVC - AI-Powered Pitch Analysis</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background: #0a0a0a;
-                    color: #ffffff;
-                    line-height: 1.6;
-                }
-                .container {
-                    max-width: 1200px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }
-                header {
-                    padding: 30px 0;
-                    text-align: center;
-                    border-bottom: 1px solid #333;
-                }
-                .logo {
-                    font-size: 3em;
-                    font-weight: bold;
-                    color: #ff6600;
-                    margin-bottom: 10px;
-                }
-                .tagline {
-                    font-size: 1.5em;
-                    color: #999;
-                }
-                .hero {
-                    text-align: center;
-                    padding: 80px 0;
-                }
-                .hero h1 {
-                    font-size: 3.5em;
-                    margin-bottom: 20px;
-                    background: linear-gradient(135deg, #ff6600 0%, #ff9900 100%);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                }
-                .hero p {
-                    font-size: 1.3em;
-                    color: #ccc;
-                    max-width: 600px;
-                    margin: 0 auto 40px;
-                }
-                .cta-button {
-                    display: inline-block;
-                    padding: 15px 40px;
-                    background: #ff6600;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 30px;
-                    font-size: 1.2em;
-                    font-weight: bold;
-                    transition: all 0.3s ease;
-                }
-                .cta-button:hover {
-                    background: #ff8800;
-                    transform: translateY(-2px);
-                    box-shadow: 0 10px 20px rgba(255, 102, 0, 0.3);
-                }
-                .features {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                    gap: 40px;
-                    padding: 80px 0;
-                }
-                .feature {
-                    text-align: center;
-                    padding: 30px;
-                    background: #1a1a1a;
-                    border-radius: 10px;
-                    border: 1px solid #333;
-                }
-                .feature-icon {
-                    font-size: 3em;
-                    margin-bottom: 20px;
-                }
-                .feature h3 {
-                    font-size: 1.5em;
-                    margin-bottom: 15px;
-                    color: #ff6600;
-                }
-                .stats {
-                    background: #1a1a1a;
-                    padding: 60px;
-                    border-radius: 20px;
-                    text-align: center;
-                    margin: 40px 0;
-                }
-                .stats-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 40px;
-                    margin-top: 40px;
-                }
-                .stat {
-                    font-size: 3em;
-                    font-weight: bold;
-                    color: #ff6600;
-                }
-                .stat-label {
-                    font-size: 1.1em;
-                    color: #999;
-                    margin-top: 10px;
-                }
-                footer {
-                    text-align: center;
-                    padding: 40px 0;
-                    border-top: 1px solid #333;
-                    color: #666;
-                }
-                .api-docs {
-                    background: #1a1a1a;
-                    padding: 20px;
-                    border-radius: 10px;
-                    margin: 40px 0;
-                }
-                .endpoint {
-                    background: #0a0a0a;
-                    padding: 15px;
-                    margin: 10px 0;
-                    border-radius: 5px;
-                    font-family: monospace;
-                    border-left: 4px solid #ff6600;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <header>
-                    <div class="logo">AutoVC</div>
-                    <div class="tagline">Get Your Pitch Roasted by AI Before VCs Do</div>
-                </header>
-                
-                <section class="hero">
-                    <h1>Turn Rejections Into Lessons</h1>
-                    <p>
-                        Upload your pitch deck and get brutally honest AI feedback that actually helps. 
-                        No sugarcoating, just actionable insights to make your pitch fundable.
-                    </p>
-                    <!-- Use a relative link so the CTA always stays within the current domain.
-                         Previously this pointed at https://app.autovc.ai, but if that domain
-                         hasn’t been configured the link is broken. A relative path keeps the user
-                         on the same site and allows the front‑end to function without a custom
-                         subdomain. -->
-                    <a href="/app" class="cta-button">Start Free Analysis</a>
-                </section>
-                
-                <section class="features">
-                    <div class="feature">
-                        <div class="feature-icon">🎯</div>
-                        <h3>Brutal Honesty</h3>
-                        <p>Get the feedback VCs think but won't say. Our AI doesn't pull punches.</p>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">🚀</div>
-                        <h3>Instant Analysis</h3>
-                        <p>Upload your deck and get comprehensive feedback in under 60 seconds.</p>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">📊</div>
-                        <h3>Data-Driven Insights</h3>
-                        <p>Benchmarks against successful pitches and industry standards.</p>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">🎭</div>
-                        <h3>Meme Cards</h3>
-                        <p>Share your roast results with style. Turn feedback into viral content.</p>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">🎙️</div>
-                        <h3>Voice Roasts</h3>
-                        <p>Hear your feedback delivered by our savage AI voice personality.</p>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">🔒</div>
-                        <h3>Secure & Private</h3>
-                        <p>Your pitches are encrypted and never shared. Your ideas stay yours.</p>
-                    </div>
-                </section>
-                
-                <section class="stats">
-                    <h2>Trusted by Ambitious Founders</h2>
-                    <div class="stats-grid">
-                        <div>
-                            <div class="stat">10K+</div>
-                            <div class="stat-label">Pitches Analyzed</div>
-                        </div>
-                        <div>
-                            <div class="stat">92%</div>
-                            <div class="stat-label">Improved After Feedback</div>
-                        </div>
-                        <div>
-                            <div class="stat">$50M+</div>
-                            <div class="stat-label">Raised by Users</div>
-                        </div>
-                        <div>
-                            <div class="stat">4.8/5</div>
-                            <div class="stat-label">User Rating</div>
-                        </div>
-                    </div>
-                </section>
-                
-                <section class="api-docs">
-                    <h2>API Documentation</h2>
-                    <div class="endpoint">POST /auth/register - Create new account</div>
-                    <div class="endpoint">POST /auth/login - Authenticate user</div>
-                    <div class="endpoint">POST /api/v2/analyze - Upload and analyze pitch</div>
-                    <div class="endpoint">GET /api/v2/pitch/{id} - Get analysis results</div>
-                    <div class="endpoint">POST /api/v2/pitch/{id}/voice-roast - Generate voice roast</div>
-                    <div class="endpoint">GET /api/v2/user/profile - Get user profile</div>
-                    <p style="margin-top: 20px;">
-                        Full documentation available at 
-                        <a href="https://docs.autovc.ai" style="color: #ff6600;">docs.autovc.ai</a>
-                    </p>
-                </section>
-                
-                <footer>
-                    <p>&copy; 2025 AutoVC. Built with tough love for founders.</p>
-                    <p>Made by founders who got tired of useless pitch feedback.</p>
-                </footer>
-            </div>
-        </body>
-        </html>
-        '''
+        """Render homepage HTML via Flask template"""
+        # Use a Flask template instead of returning a large HTML string.
+        # The corresponding template file lives in `templates/index.html`.
+        return render_template('index.html')
     
     def _health_check(self):
         """Comprehensive health check"""
