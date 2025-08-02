@@ -11,8 +11,8 @@ services:
       pip install --upgrade pip
       pip install -r requirements.txt
     
-    # Start command
-    startCommand: gunicorn autovc:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
+    # Start command - UPDATED TIMEOUT TO 300 SECONDS (5 MINUTES)
+    startCommand: gunicorn autovc:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 300
     
     # Health check
     healthCheckPath: /health
