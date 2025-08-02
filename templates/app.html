@@ -590,7 +590,13 @@
             // Verdict
             const decision = document.getElementById('decision');
             decision.textContent = data.verdict.decision;
-            decision.className = `decision ${data.verdict.decision.toLowerCase()}`;
+
+            // Use green for FUND, red for PASS
+            if (data.verdict.decision === 'FUND') {
+                decision.className = 'decision fund';
+            } else {
+                decision.className = 'decision pass';
+            }
 
             document.getElementById('confidence').textContent = `Confidence: ${data.verdict.confidence}%`;
             document.getElementById('hotTake').textContent = `"${data.verdict.hot_take}"`;

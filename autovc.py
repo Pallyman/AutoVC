@@ -1321,7 +1321,13 @@ class AutoVCApp:
             // Verdict
             const decision = document.getElementById('decision');
             decision.textContent = data.verdict.decision;
-            decision.className = `decision ${data.verdict.decision.toLowerCase()}`;
+
+            // Use green for FUND, red for PASS
+            if (data.verdict.decision === 'FUND') {
+                decision.className = 'decision fund';
+            } else {
+                decision.className = 'decision pass';
+            }
             
             document.getElementById('confidence').textContent = `Confidence: ${data.verdict.confidence}%`;
             document.getElementById('hotTake').textContent = `"${data.verdict.hot_take}"`;
@@ -2917,12 +2923,18 @@ class AutoVCApp:
         - "timing": MUST be 100-150 words. Explain market catalysts or lack thereof.
         - Each item in lists should be a complete sentence, not just fragments.
 
+        SCORING RULES:
+        - Calculate overall_score as the average of market_score, team_score, product_score, and business_score
+        - If overall_score >= 7, decision = "FUND", else decision = "PASS"
+        - Calculate confidence as: overall_score * 10 (so a score of 7.5 = 75% confidence)
+        - Confidence should reflect how certain you are about the decision (50-95%)
+
         Analyze the pitch and respond with ONLY a JSON object in this exact format:
 
         {
             "verdict": {
                 "decision": "FUND" or "PASS" (FUND only if overall_score >= 7),
-                "confidence": 1-100 (calculate based on weighted scores),
+                "confidence": 1-100 (should equal overall_score * 10),
                 "hot_take": "A memorable, quotable one-liner that captures the essence",
                 "reasoning": "2-3 sentence explanation of your decision"
             },
@@ -2955,7 +2967,7 @@ class AutoVCApp:
                 "team_score": 1-10,
                 "product_score": 1-10,
                 "business_score": 1-10,
-                "overall_score": 1-10 (average of all scores)
+                "overall_score": 1-10 (MUST be the average of the four scores above)
             },
             "feedback": {
                 "brutal_truth": "The hardest truths they need to hear. Be specific about their weaknesses, unrealistic assumptions, and why most investors will pass. Include concrete examples of where they're falling short and what the real challenges are. Don't sugarcoat - they need to hear this.",
@@ -2972,7 +2984,9 @@ class AutoVCApp:
                 "encouragement": "What's genuinely promising about this opportunity. Highlight their real strengths, unique insights, and potential for success. Be specific about what they're doing right and how they could build on these advantages. Give them hope while staying honest."
             }
         }
-
+        
+        IMPORTANT: The confidence percentage MUST match the overall_score * 10. So if overall_score is 3.6, confidence should be 36%.
+        
         Be specific, actionable, and don't use generic advice. Reference actual details from their pitch."""
     
     def _get_mock_analysis(self) -> Dict[str, Any]:
