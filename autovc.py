@@ -1922,20 +1922,15 @@ class AutoVCApp:
                 # Generate a simple analysis identifier (8‑char UUID)
                 analysis_id = str(uuid.uuid4())[:8]
 
-                # Cache the full analysis including some content preview for pro features
+                # Cache the analysis for pro features if Redis is available
                 if self.redis_client and analysis_id:
                     try:
-                        cache_data = {
-                            **analysis,
-                            'content': content[:1000] if content else '',  # Store first 1000 chars
-                            'timestamp': datetime.utcnow().isoformat()
-                        }
+                        # Cache the analysis with a 1 hour expiry for future pro insights
                         self.redis_client.setex(
                             f"analysis:{analysis_id}",
                             3600,
-                            json.dumps(cache_data)
+                            json.dumps(analysis)
                         )
-                        logger.info(f"Cached analysis with ID: {analysis_id}")
                     except Exception as e:
                         logger.warning(f"Failed to cache analysis: {e}")
 
@@ -2001,7 +1996,13 @@ class AutoVCApp:
         # opportunity, financial projections and next steps.
         @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
         def pro_analysis(analysis_id: str):
-            """Return pro analysis from the AI-generated data"""
+            """Return pro analysis from cached data or generate new one"""
+            # Log entry details for debugging and traceability
+            logger.info(f"=== PRO ANALYSIS ENDPOINT HIT ===")
+            logger.info(f"Analysis ID requested: {analysis_id}")
+            # Use flask `request` object to capture method and headers for troubleshooting
+            logger.info(f"Request method: {request.method}")
+            logger.info(f"Request headers: {dict(request.headers)}")
             try:
                 # For free tier demo, check if we have the analysis in session/cache
                 # In production, you'd fetch this from database using analysis_id
