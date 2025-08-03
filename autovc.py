@@ -1409,15 +1409,31 @@ class AutoVCApp:
 
         // Upgrade to Pro
         upgradeButton.addEventListener('click', async () => {
-            if (!currentAnalysisId) return;
+            // Ensure we have an analysis ID before requesting pro insights
+            if (!currentAnalysisId) {
+                console.error('No analysis ID available!');
+                return;
+            }
+            
+            // Debugging: show which analysis ID we're requesting
+            console.log('Fetching pro analysis for ID:', currentAnalysisId);
             
             try {
-                const response = await fetch(`${API_BASE}/api/pro-analysis/${currentAnalysisId}`);
+                const url = `${API_BASE}/api/pro-analysis/${currentAnalysisId}`;
+                console.log('Fetching from URL:', url);
+                
+                const response = await fetch(url);
+                console.log('Response status:', response.status);
                 
                 if (response.ok) {
                     const proData = await response.json();
+                    console.log('Pro data received:', proData);
                     displayProAnalysis(proData);
                 } else {
+                    // Log non‑OK responses for debugging
+                    console.error('Failed to load pro analysis:', response.status, response.statusText);
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
                     alert('Failed to load pro analysis');
                 }
             } catch (error) {
@@ -1427,7 +1443,16 @@ class AutoVCApp:
         });
 
         function displayProAnalysis(data) {
+            // Debug: log the full data passed to this function
+            console.log('displayProAnalysis called with:', data);
             const proContent = document.getElementById('proContent');
+            // Check if we have the expected data structure
+            if (!data.pro_insights) {
+                console.error('No pro_insights in data:', data);
+                proContent.innerHTML = '<p style="color: red;">Error: No pro insights data received</p>';
+                proSection.classList.add('show');
+                return;
+            }
             
             let html = `
                 <div class="pro-subsection">
@@ -1451,7 +1476,9 @@ class AutoVCApp:
                 </div>
             `;
 
+            console.log('Checking for competitor_analysis in:', data.pro_insights);
             if (data.pro_insights && data.pro_insights.competitor_analysis) {
+                console.log('Found competitor analysis!');
                 html += `
                     <div class="pro-subsection">
                         <h3>🏆 Competitor Analysis</h3>
@@ -1510,6 +1537,9 @@ class AutoVCApp:
                         </ul>
                     </div>
                 `;
+            } else {
+                console.log('No competitor analysis found');
+                html += '<p style="color: orange;">No detailed competitor analysis available</p>';
             }
 
             proContent.innerHTML = html;
@@ -1996,13 +2026,7 @@ class AutoVCApp:
         # opportunity, financial projections and next steps.
         @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
         def pro_analysis(analysis_id: str):
-            """Return pro analysis from cached data or generate new one"""
-            # Log entry details for debugging and traceability
-            logger.info(f"=== PRO ANALYSIS ENDPOINT HIT ===")
-            logger.info(f"Analysis ID requested: {analysis_id}")
-            # Use flask `request` object to capture method and headers for troubleshooting
-            logger.info(f"Request method: {request.method}")
-            logger.info(f"Request headers: {dict(request.headers)}")
+            """Return pro analysis from the AI-generated data"""
             try:
                 # For free tier demo, check if we have the analysis in session/cache
                 # In production, you'd fetch this from database using analysis_id
