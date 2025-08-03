@@ -8,7 +8,7 @@ cryptography==41.0.3
 Werkzeug==2.3.7
 PyPDF2==3.0.1
 Pillow==10.4.0
-openai==0.28.1
+openai==1.98.0
 redis==5.0.0
 gunicorn==21.2.0
 typing-extensions==4.14.1
