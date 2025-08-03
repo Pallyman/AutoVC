@@ -2890,7 +2890,7 @@ class AutoVCApp:
                     {"role": "user", "content": f"Analyze this pitch deck:\n\n{content[:8000]}"}
                 ],
                 temperature=0.7,
-                max_tokens=2000
+                max_tokens=5000
             )
             
             analysis_text = response.choices[0].message.content
@@ -2920,7 +2920,7 @@ class AutoVCApp:
                     {"role": "user", "content": f"Analyze this pitch deck:\n\n{content[:8000]}"}
                 ],
                 temperature=0.7,
-                max_tokens=2000
+                max_tokens=5000
             )
             
             analysis_text = response.choices[0].message.content
@@ -3303,7 +3303,7 @@ Provide enhanced analysis in this exact JSON format:
             
             response = client.messages.create(
                 model="claude-3-sonnet-20241022",
-                max_tokens=2000,
+                max_tokens=5000,
                 temperature=0.7,
                 messages=[{"role": "user", "content": claude_prompt}]
             )
