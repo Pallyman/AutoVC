@@ -498,10 +498,6 @@ class AutoVCApp:
         # Add handlers
         logger.addHandler(file_handler)
         self.app.logger.addHandler(file_handler)
-
-        # Set the Flask app logger to debug so we capture more detail in logs
-        # This helps trace issues during AI analysis and caching.
-        self.app.logger.setLevel(logging.DEBUG)
     
     def setup_extensions(self):
         """Initialize Flask extensions"""
@@ -1882,8 +1878,6 @@ class AutoVCApp:
         def analyze_pitch_free():
             """Free analysis endpoint – no authentication required"""
             try:
-                logger.info("Free analysis endpoint called")
-                
                 # Ensure a file was uploaded
                 if 'file' not in request.files:
                     return jsonify(error="No file uploaded"), 400
@@ -1894,11 +1888,10 @@ class AutoVCApp:
                 # Validate file type and extension
                 filename = secure_filename(file.filename)
                 file_ext = os.path.splitext(filename)[1].lower()
-                logger.info(f"Processing file: {filename}, extension: {file_ext}")
                 if file_ext not in self.app.config["ALLOWED_EXTENSIONS"]:
                     return jsonify(error=f"File type {file_ext} not supported"), 400
 
-                # Check file size
+                # Check file size (limit to configured max)
                 file.seek(0, os.SEEK_END)
                 file_size = file.tell()
                 file.seek(0)
@@ -1907,64 +1900,50 @@ class AutoVCApp:
 
                 # Read file content
                 file_content = file.read()
-                logger.info(f"File content read, size: {len(file_content)} bytes")
 
-                # Extract text depending on extension.  If extraction fails (e.g. encrypted
-                # or image‑only PDFs), fall back to an empty string.  The AI layer will
-                # handle empty content by returning a mock analysis.
+                # Extract text depending on extension.  If extraction fails
+                # (e.g. encrypted or image‑only PDFs), fall back to a mock
+                # analysis rather than returning an error.
                 if file_ext == '.pdf':
                     try:
                         content = self._extract_content(file_content, file_ext)
-                        logger.info(f"PDF content extracted, length: {len(content)}")
                     except Exception as exc:
-                        logger.error(f"PDF extraction error: {exc}")
+                        logger.error(f"Content extraction error: {exc}")
                         content = ""
                 elif file_ext == '.txt':
                     content = file_content.decode('utf-8', errors='ignore')
-                    logger.info(f"Text content decoded, length: {len(content)}")
                 else:
                     return jsonify(error="Only PDF and TXT files supported for free analysis"), 400
 
-                # Perform AI analysis on a subset of the content for the free tier.  Use
-                # only the first 3000 characters to save on API usage.  When content is
-                # empty (extraction failed), the helper returns a mock analysis.
-                logger.info("Starting AI analysis...")
+                # Perform AI analysis on a subset of the content for the free tier
+                # If content is empty (extraction failed), this will return a mock analysis.
                 analysis = self._get_ai_analysis(content[:3000] if content else "")
-                logger.info("AI analysis completed")
 
                 # Generate a simple analysis identifier (8‑char UUID)
                 analysis_id = str(uuid.uuid4())[:8]
 
-                # Cache the full analysis including some content preview for pro features
-                if self.redis_client:
+                # Cache the analysis for pro features if Redis is available
+                if self.redis_client and analysis_id:
                     try:
-                        cache_data = {
-                            **analysis,
-                            'content': content[:1000] if content else '',
-                            'timestamp': datetime.utcnow().isoformat()
-                        }
+                        # Cache the analysis with a 1 hour expiry for future pro insights
                         self.redis_client.setex(
                             f"analysis:{analysis_id}",
                             3600,
-                            json.dumps(cache_data)
+                            json.dumps(analysis)
                         )
-                        logger.info(f"Cached analysis with ID: {analysis_id}")
                     except Exception as e:
                         logger.warning(f"Failed to cache analysis: {e}")
 
-                # Return the analysis results.  Include market_analysis and
-                # founder_assessment for richer feedback in the free tier.
+                # Return the analysis results without persistence or pro data
                 return jsonify({
                     'analysis_id': analysis_id,
                     'verdict': analysis.get('verdict', {}),
                     'feedback': analysis.get('feedback', {}),
                     'benchmarks': analysis.get('benchmarks', {}),
-                    'market_analysis': analysis.get('market_analysis', {}),
-                    'founder_assessment': analysis.get('founder_assessment', {}),
                     'meme_card_url': None
                 })
             except Exception as exc:
-                logger.error(f"Free analysis error: {exc}", exc_info=True)
+                logger.error(f"Free analysis error: {exc}")
                 return jsonify(error="Analysis failed. Please try again."), 500
 
         # ---------------------------------------------------------------------
@@ -2017,12 +1996,12 @@ class AutoVCApp:
         # opportunity, financial projections and next steps.
         @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
         def pro_analysis(analysis_id: str):
-            """Return pro analysis from cached data"""
+            """Return pro analysis from cached data or generate new one"""
             try:
                 logger.info(f"Pro analysis requested for ID: {analysis_id}")
-
-                # Try to get from Redis cache if available
-                cached_analysis = None
+                
+                # Try to get from Redis cache
+                cached_analysis: Optional[Dict[str, Any]] = None
                 if self.redis_client:
                     try:
                         cached_data = self.redis_client.get(f"analysis:{analysis_id}")
@@ -2031,10 +2010,11 @@ class AutoVCApp:
                             logger.info("Found cached analysis")
                     except Exception as e:
                         logger.error(f"Redis error: {e}")
-
+                
                 if cached_analysis:
-                    # If pro analysis already exists, return it
+                    # Check if pro_analysis already exists in cache
                     if 'pro_analysis' in cached_analysis:
+                        logger.info("Returning existing pro analysis from cache")
                         return jsonify({
                             'analysis': {
                                 'market': {
@@ -2051,55 +2031,89 @@ class AutoVCApp:
                             'pro_insights': cached_analysis.get('pro_analysis', {})
                         })
                     else:
-                        # No pro analysis cached; generate a new one by re‑running AI
-                        # using the cached content.  If no content is cached, fall back
-                        # to a comprehensive mock analysis.
-                        logger.info("Generating new pro analysis")
+                        # Generate REAL pro analysis using AI
+                        logger.info("Generating new pro analysis using AI")
+                        
+                        # Get the cached content or use the basic analysis as context
                         content = cached_analysis.get('content', '')
+                        
+                        # If we have content, re-analyze with the full prompt
+                        # If not, create a context from the basic analysis
                         if content:
+                            logger.info(f"Re-analyzing with original content (length: {len(content)})")
+                            # Use the full analysis prompt to get complete analysis with pro_analysis
                             new_analysis = self._get_ai_analysis(content)
                         else:
-                            new_analysis = self._get_mock_analysis()
+                            # Create a summary of the basic analysis to use as context
+                            logger.info("Creating pro analysis based on initial analysis context")
+                            context = f"""
+Based on this initial analysis of a pitch deck:
 
-                        # Ensure pro_analysis is present
+Verdict: {cached_analysis.get('verdict', {}).get('decision')} with {cached_analysis.get('verdict', {}).get('confidence')}% confidence
+Hot Take: {cached_analysis.get('verdict', {}).get('hot_take')}
+
+Market Analysis:
+- TAM: {cached_analysis.get('market_analysis', {}).get('tam', 'Not specified')}
+- Competition: {cached_analysis.get('market_analysis', {}).get('competition', 'Not specified')}
+- Timing: {cached_analysis.get('market_analysis', {}).get('timing', 'Not specified')}
+- Score: {cached_analysis.get('market_analysis', {}).get('score', 'N/A')}/10
+
+Team Assessment:
+- Strengths: {', '.join(cached_analysis.get('founder_assessment', {}).get('strengths', []))}
+- Weaknesses: {', '.join(cached_analysis.get('founder_assessment', {}).get('weaknesses', []))}
+
+Product Score: {cached_analysis.get('benchmarks', {}).get('product_score', 'N/A')}/10
+Business Model Score: {cached_analysis.get('benchmarks', {}).get('business_score', 'N/A')}/10
+Overall Score: {cached_analysis.get('benchmarks', {}).get('overall_score', 'N/A')}/10
+
+Brutal Truth: {cached_analysis.get('feedback', {}).get('brutal_truth', 'Not specified')}
+"""
+                            # Generate pro insights using the context
+                            new_analysis = self._generate_pro_insights_from_context(context)
+                        
+                        # Ensure we have pro_analysis in the response
                         if 'pro_analysis' not in new_analysis:
-                            new_analysis['pro_analysis'] = self._generate_mock_pro_analysis()
-
-                        # Update cache with the new analysis for future requests
+                            # If the AI didn't include pro_analysis, generate it separately
+                            logger.info("AI response missing pro_analysis, generating separately")
+                            pro_insights = self._generate_standalone_pro_analysis(cached_analysis)
+                            new_analysis['pro_analysis'] = pro_insights
+                        
+                        # Update cache with the new pro analysis
                         if self.redis_client:
                             try:
-                                cached_analysis.update(new_analysis)
+                                # Merge the new pro analysis with cached data
+                                cached_analysis['pro_analysis'] = new_analysis.get('pro_analysis', {})
                                 self.redis_client.setex(
                                     f"analysis:{analysis_id}",
                                     3600,
                                     json.dumps(cached_analysis)
                                 )
+                                logger.info("Updated cache with pro analysis")
                             except Exception as e:
                                 logger.error(f"Failed to update cache: {e}")
-
+                        
                         return jsonify({
                             'analysis': {
                                 'market': {
-                                    'tam': new_analysis.get('market_analysis', {}).get('tam', ''),
-                                    'competition': new_analysis.get('market_analysis', {}).get('competition', ''),
-                                    'timing': new_analysis.get('market_analysis', {}).get('timing', '')
+                                    'tam': new_analysis.get('market_analysis', cached_analysis.get('market_analysis', {})).get('tam', ''),
+                                    'competition': new_analysis.get('market_analysis', cached_analysis.get('market_analysis', {})).get('competition', ''),
+                                    'timing': new_analysis.get('market_analysis', cached_analysis.get('market_analysis', {})).get('timing', '')
                                 },
                                 'founders': {
-                                    'strengths': new_analysis.get('founder_assessment', {}).get('strengths', []),
-                                    'weaknesses': new_analysis.get('founder_assessment', {}).get('weaknesses', []),
+                                    'strengths': new_analysis.get('founder_assessment', cached_analysis.get('founder_assessment', {})).get('strengths', []),
+                                    'weaknesses': new_analysis.get('founder_assessment', cached_analysis.get('founder_assessment', {})).get('weaknesses', []),
                                     'missing': 'See detailed assessment below'
                                 }
                             },
                             'pro_insights': new_analysis.get('pro_analysis', {})
                         })
-
+                
                 # No cached analysis found
                 logger.warning(f"No cached analysis found for ID: {analysis_id}")
                 return jsonify({
                     'error': 'Analysis expired. Please analyze your pitch again.',
                     'analysis_id': analysis_id
                 }), 404
-
             except Exception as exc:
                 logger.error(f"Pro analysis error: {exc}", exc_info=True)
                 return jsonify(error="Failed to retrieve pro analysis"), 500
@@ -2911,85 +2925,46 @@ class AutoVCApp:
     def _get_ai_analysis(self, content: str) -> Dict[str, Any]:
         """Get AI analysis of pitch content"""
         try:
-            # If no content or the content is too short, fall back to mock analysis.  We want
-            # to avoid sending trivial prompts to the AI APIs because they tend to return
-            # generic boilerplate.  A minimal length of ~50 characters is required.
-            if not content or len(content.strip()) < 50:
-                logger.warning("Content too short for AI analysis, using mock")
-                return self._get_mock_analysis()
-
-            # Try Groq first for cost efficiency if configured
-            if GROQ_AVAILABLE and self.app.config.get("GROQ_API_KEY"):
-                logger.info("Attempting analysis with Groq")
+            # Try Groq first for cost efficiency
+            if GROQ_AVAILABLE and self.app.config["GROQ_API_KEY"]:
                 return self._analyze_with_groq(content)
-
-            # Fallback to OpenAI if an API key is available
-            if self.app.config.get("OPENAI_API_KEY"):
-                logger.info("Attempting analysis with OpenAI")
+            elif self.app.config["OPENAI_API_KEY"]:
                 return self._analyze_with_openai(content)
-
-            # No AI backends configured – use the mock analysis
-            logger.warning("No AI API keys configured, using mock analysis")
-            return self._get_mock_analysis()
-
+            else:
+                return self._get_mock_analysis()
+                
         except Exception as e:
-            # Never propagate exceptions from AI providers.  Log the error and
-            # return a mock so the user still receives a response.
-            logger.error(f"AI analysis error: {e}", exc_info=True)
+            logger.error(f"AI analysis error: {e}")
             return self._get_mock_analysis()
     
     def _analyze_with_openai(self, content: str) -> Dict[str, Any]:
-        """Analyze using OpenAI GPT.  Uses the newer openai client library if available."""
+        """Analyze using OpenAI GPT"""
         prompt = self._get_analysis_prompt()
-
+        
         try:
-            # Import openai lazily so that the module can be mocked or replaced.  The v1
-            # client exposes a top‑level OpenAI class for creating a client with an API
-            # key.  If that is unavailable (older 0.x version), we fall back to the
-            # legacy ChatCompletion API.
-            analysis_text = ""
-            try:
-                # Attempt to use the OpenAI v1 client
-                client = openai.OpenAI(api_key=self.app.config["OPENAI_API_KEY"])
-                resp = client.chat.completions.create(
-                    model="gpt-3.5-turbo",  # Use cost‑effective model by default
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": f"Analyze this pitch deck:\n\n{content[:8000]}"}
-                    ],
-                    temperature=0.7,
-                    max_tokens=5000
-                )
-                analysis_text = resp.choices[0].message.content
-            except AttributeError:
-                # Fallback to the legacy API if the new client isn't available
-                response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": f"Analyze this pitch deck:\n\n{content[:8000]}"}
-                    ],
-                    temperature=0.7,
-                    max_tokens=5000
-                )
-                analysis_text = response.choices[0].message.content
-
-            # Extract a JSON object from the AI's free‑form response.  We locate the
-            # first '{' and the last '}' to capture the JSON payload.  If parsing
-            # fails, return a mock analysis instead of raising an error.
+            response = openai.ChatCompletion.create(
+                model="gpt-4" if len(content) > 2000 else "gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": f"Analyze this pitch deck:\n\n{content[:8000]}"}
+                ],
+                temperature=0.7,
+                max_tokens=5000
+            )
+            
+            analysis_text = response.choices[0].message.content
+            
+            # Extract JSON from response
             start = analysis_text.find('{')
             end = analysis_text.rfind('}') + 1
+            
             if start >= 0 and end > start:
-                json_str = analysis_text[start:end]
-                analysis = json.loads(json_str)
-                logger.info("Successfully parsed OpenAI response")
-                return analysis
+                return json.loads(analysis_text[start:end])
             else:
-                logger.error("Could not find JSON in OpenAI response")
                 return self._get_mock_analysis()
-
+                
         except Exception as e:
-            logger.error(f"OpenAI analysis error: {e}", exc_info=True)
+            logger.error(f"OpenAI analysis error: {e}")
             return self._get_mock_analysis()
     
     def _analyze_with_groq(self, content: str) -> Dict[str, Any]:
@@ -3253,13 +3228,7 @@ class AutoVCApp:
         Be specific, actionable, and don't use generic advice. Reference actual details from their pitch."""
     
     def _get_mock_analysis(self) -> Dict[str, Any]:
-        """Return mock analysis for testing or fallback
-
-        This mock includes a comprehensive breakdown of the pitch with realistic
-        placeholder values.  It also contains a `pro_analysis` section
-        generated by `_generate_mock_pro_analysis` to support the pro insights
-        endpoint when no AI APIs are configured.
-        """
+        """Return mock analysis for testing or fallback"""
         return {
             "verdict": {
                 "decision": "PASS",
@@ -3268,139 +3237,321 @@ class AutoVCApp:
                 "reasoning": "While the team shows promise, the market validation is too weak and the business model needs significant work."
             },
             "market_analysis": {
-                "tam": "$50M addressable market growing at 15% annually. The market is fragmented across consumer and enterprise segments with no clear leader. Adjacent markets in workflow automation could expand TAM to $200M.",
-                "competition": "Five established players dominate with 70% market share combined. TechCorp leads with 30% share and $100M funding. StartupXYZ growing fast with innovative features. Barriers to entry are moderate due to technical complexity.",
-                "timing": "Market timing is challenging. No clear catalysts for change despite digital transformation trends. Enterprises are budget‑conscious in 2025. Regulatory changes in 2026 might create opportunities but uncertainty remains high.",
+                "tam": "$50M addressable market, but highly fragmented",
+                "competition": "5+ established players with significant market share",
+                "timing": "Market timing is questionable - no clear catalyst for change",
                 "score": 5
             },
             "founder_assessment": {
-                "strengths": [
-                    "Deep technical expertise in machine learning",
-                    "Clear passion for solving customer problems",
-                    "Previous startup experience with successful exit"
-                ],
-                "weaknesses": [
-                    "Limited sales and marketing experience",
-                    "No domain expertise in target market"
-                ],
+                "strengths": ["Deep technical expertise", "Clear passion for the problem", "Previous startup experience"],
+                "weaknesses": ["Limited sales experience", "No domain expertise in target market"],
                 "domain_expertise": 4,
                 "execution_ability": 6
             },
             "product_analysis": {
-                "problem_validation": "Problem is real but not urgent for most customers. Only 20% of surveyed users actively seeking solutions.",
-                "solution_fit": "Solution is technically sound but overengineered. Features don't map directly to customer pain points.",
-                "differentiation": "Minimal differentiation from existing solutions. AI features are becoming table stakes.",
+                "problem_validation": "Problem is real but not urgent for most customers",
+                "solution_fit": "Solution is technically sound but overengineered",
+                "differentiation": "Minimal differentiation from existing solutions",
                 "score": 5
             },
             "business_model": {
-                "revenue_model": "SaaS model is appropriate but pricing unclear. No evidence of willingness to pay at proposed price points.",
-                "unit_economics": "CAC/LTV ratio not demonstrated. Customer acquisition costs likely too high for SMB segment.",
-                "scalability": "Scalability limited by high touch sales process. Need more self‑serve options.",
+                "revenue_model": "SaaS model is appropriate but pricing is unclear",
+                "unit_economics": "CAC/LTV ratio not demonstrated",
+                "scalability": "Scalability limited by high touch sales process",
                 "score": 4
             },
             "benchmarks": {
                 "market_score": 5,
-                "team_score": 5,  # Average of domain_expertise (4) and execution_ability (6)
+                "team_score": 6,
                 "product_score": 5,
                 "business_score": 4,
-                "overall_score": 4.8  # Average of all four scores
+                "overall_score": 5
             },
             "feedback": {
-                "brutal_truth": "You're solving a vitamin problem in a world that needs painkillers. Your technical sophistication is impressive, but customers don't care about your fancy AI if it doesn't solve their immediate pain. The market is already crowded with 'good enough' solutions, and you haven't shown why yours is 10x better. Without significant market validation or a unique distribution advantage, you'll burn through cash trying to educate a market that isn't ready. Most VCs will pass because the ROI timeline is too long and the market opportunity isn't big enough to justify the risk.",
+                "brutal_truth": "You're solving a vitamin problem in a world that needs painkillers",
                 "key_risks": [
-                    "Market education cost will exceed funding runway - expect 18+ month sales cycles",
-                    "Established competitors can copy features in 6 months with bigger budgets",
-                    "No clear path to profitability without 70%+ gross margins"
+                    "Market education cost too high",
+                    "Established competitors can easily copy features",
+                    "No clear path to profitability"
                 ],
                 "action_items": [
-                    "Get 10 paying customers in next 60 days or pivot immediately",
-                    "Focus on one specific niche and own it completely before expanding",
-                    "Hire experienced B2B sales leader with proven track record in space"
+                    "Get 10 paying customers before raising money",
+                    "Focus on one specific niche and dominate it",
+                    "Hire someone with industry sales experience"
                 ],
-                "encouragement": "Your technical execution is genuinely impressive and the team clearly has the skills to build sophisticated products. The passion for solving this problem shines through, and with three successful exits between the founders, you have the experience to navigate challenges. Your early customer interviews show promise, and the 30% of users who tried the prototype loved it. With better market positioning and focus on a specific niche where the pain is acute, this could become a fundable business. The technology foundation you've built gives you flexibility to pivot quickly if needed."
-            },
-            "pro_analysis": self._generate_mock_pro_analysis()
-        }
-
-    def _generate_mock_pro_analysis(self) -> Dict[str, Any]:
-        """Generate mock pro analysis data
-
-        This helper constructs detailed placeholder insights used when no AI
-        backend is available or when the AI response lacks a `pro_analysis`
-        section.  It is returned both in the free mock analysis and used by
-        the pro analysis endpoint to enrich cached analyses.
-        """
-        return {
-            "competitor_analysis": {
-                "main_competitors": [
-                    {
-                        "name": "TechCorp Solutions",
-                        "strength": "Market leader with 40% share",
-                        "weakness": "Slow to innovate, legacy systems",
-                        "market_share": "40%",
-                        "funding": "$150M raised",
-                        "key_differentiator": "Enterprise relationships",
-                        "vulnerability": "Poor user experience",
-                        "recent_moves": "Acquired SmallCo in Q1 2025"
-                    },
-                    {
-                        "name": "StartupXYZ",
-                        "strength": "Modern tech stack",
-                        "weakness": "Limited resources",
-                        "market_share": "15%",
-                        "funding": "$20M Series A",
-                        "key_differentiator": "AI-powered features",
-                        "vulnerability": "Burn rate concerns",
-                        "recent_moves": "Launched v2.0 platform"
-                    },
-                    {
-                        "name": "BigCo Platform",
-                        "strength": "Deep pockets",
-                        "weakness": "Not core focus",
-                        "market_share": "25%",
-                        "funding": "Public company",
-                        "key_differentiator": "Bundled offering",
-                        "vulnerability": "Might exit market",
-                        "recent_moves": "Reduced investment in division"
-                    }
-                ],
-                "positioning": "Focus on SMB market segment that's underserved by enterprise players. Build superior UX."
-            },
-            "market_opportunity": {
-                "tam_breakdown": "$50M current market growing to $200M by 2028",
-                "sam": "$15M in target SMB segment",
-                "som": "$1.5M realistic capture in year 1",
-                "growth_rate": "32% CAGR expected through 2028"
-            },
-            "financial_projections": {
-                "year_1": {"users": "1,000", "revenue": "$120K"},
-                "year_2": {"users": "5,000", "revenue": "$600K"},
-                "year_3": {"users": "20,000", "revenue": "$2.4M"}
-            },
-            "next_steps": {
-                "immediate": [
-                    "Validate pricing with 20 target customers",
-                    "Build MVP focusing on core differentiator",
-                    "Recruit technical co-founder with domain expertise",
-                    "Create detailed competitive analysis matrix",
-                    "Establish advisory board with industry veterans"
-                ],
-                "30_days": [
-                    "Close 5 pilot customers at discounted rate",
-                    "Complete technical architecture design",
-                    "File provisional patents on key innovations",
-                    "Develop go-to-market strategy document",
-                    "Initiate conversations with seed investors"
-                ],
-                "90_days": [
-                    "Achieve $10K MRR from pilot customers",
-                    "Release beta version to 50 early adopters",
-                    "Secure $500K in seed funding commitments",
-                    "Hire first two engineers",
-                    "Establish key channel partnerships"
-                ]
+                "encouragement": "Your technical execution is solid and the team has good chemistry. With better market focus, this could work."
             }
         }
+
+    def _generate_pro_insights_from_context(self, context: str) -> Dict[str, Any]:
+        """Generate pro insights using the analysis context as input.
+
+        This helper uses either Groq or OpenAI to generate a structured
+        `pro_analysis` object based on a free‑form context string.  If no
+        AI providers are configured or parsing fails, it falls back to
+        returning a mock pro analysis.
+        """
+        # Prompt instructs the AI to produce only JSON with the desired structure
+        prompt = """You are a senior venture capitalist providing deep insights for startup founders.
+
+Based on the analysis context provided, generate detailed pro insights.
+
+Respond with ONLY a JSON object in this format:
+
+{
+    "pro_analysis": {
+        "competitor_analysis": {
+            "main_competitors": [
+                {
+                    "name": "Realistic Competitor Name #1",
+                    "strength": "Their main competitive advantage",
+                    "weakness": "Their main vulnerability",
+                    "market_share": "X%",
+                    "funding": "$XM raised",
+                    "key_differentiator": "What makes them unique",
+                    "vulnerability": "Where they can be beaten",
+                    "recent_moves": "Their latest strategic action"
+                },
+                {
+                    "name": "Realistic Competitor Name #2",
+                    "strength": "Their main competitive advantage",
+                    "weakness": "Their main vulnerability",
+                    "market_share": "X%",
+                    "funding": "$XM raised",
+                    "key_differentiator": "What makes them unique",
+                    "vulnerability": "Where they can be beaten",
+                    "recent_moves": "Their latest strategic action"
+                },
+                {
+                    "name": "Realistic Competitor Name #3",
+                    "strength": "Their main competitive advantage",
+                    "weakness": "Their main vulnerability",
+                    "market_share": "X%",
+                    "funding": "$XM raised",
+                    "key_differentiator": "What makes them unique",
+                    "vulnerability": "Where they can be beaten",
+                    "recent_moves": "Their latest strategic action"
+                }
+            ],
+            "positioning": "Detailed strategy for how to position against these competitors. 2-3 sentences."
+        },
+        "market_opportunity": {
+            "tam_breakdown": "Detailed TAM analysis with specific segments and growth rates",
+            "sam": "Serviceable addressable market with justification",
+            "som": "Realistic obtainable market share in 2-3 years",
+            "growth_rate": "Expected CAGR with reasoning"
+        },
+        "financial_projections": {
+            "year_1": {"users": "X", "revenue": "$X"},
+            "year_2": {"users": "X", "revenue": "$X"},
+            "year_3": {"users": "X", "revenue": "$X"}
+        },
+        "next_steps": {
+            "immediate": [
+                "Specific action #1 with metrics and timeline",
+                "Specific action #2 with metrics and timeline",
+                "Specific action #3 with metrics and timeline",
+                "Specific action #4 with metrics and timeline",
+                "Specific action #5 with metrics and timeline"
+            ],
+            "30_days": [
+                "30-day action #1 with expected outcome",
+                "30-day action #2 with expected outcome",
+                "30-day action #3 with expected outcome",
+                "30-day action #4 with expected outcome",
+                "30-day action #5 with expected outcome"
+            ],
+            "90_days": [
+                "90-day milestone #1 with success criteria",
+                "90-day milestone #2 with success criteria",
+                "90-day milestone #3 with success criteria",
+                "90-day milestone #4 with success criteria",
+                "90-day milestone #5 with success criteria"
+            ]
+        }
+    }
+}
+
+Be specific and realistic based on the market and scores provided in the context."""
+        try:
+            analysis_text = ""
+            # Try Groq first
+            if GROQ_AVAILABLE and self.app.config.get("GROQ_API_KEY"):
+                logger.info("Generating pro insights with Groq")
+                client = Groq(api_key=self.app.config["GROQ_API_KEY"])
+                response = client.chat.completions.create(
+                    model="mixtral-8x7b-32768",
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": context}
+                    ],
+                    temperature=0.7,
+                    max_tokens=2000
+                )
+                analysis_text = response.choices[0].message.content
+            elif self.app.config.get("OPENAI_API_KEY"):
+                logger.info("Generating pro insights with OpenAI")
+                try:
+                    client = openai.OpenAI(api_key=self.app.config["OPENAI_API_KEY"])
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": context}
+                        ],
+                        temperature=0.7,
+                        max_tokens=2000
+                    )
+                    analysis_text = response.choices[0].message.content
+                except AttributeError:
+                    # Fallback for legacy OpenAI API
+                    response = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": context}
+                        ],
+                        temperature=0.7,
+                        max_tokens=2000
+                    )
+                    analysis_text = response.choices[0].message.content
+            else:
+                logger.warning("No AI API configured for pro insights")
+                return {"pro_analysis": self._get_mock_analysis().get('pro_analysis', {})}
+
+            # Parse JSON response
+            start = analysis_text.find('{')
+            end = analysis_text.rfind('}') + 1
+            if start >= 0 and end > start:
+                return json.loads(analysis_text[start:end])
+            else:
+                logger.error("Could not parse pro insights JSON")
+                return {"pro_analysis": self._generate_mock_analysis().get('pro_analysis', {})}
+        except Exception as e:
+            logger.error(f"Pro insights generation error: {e}")
+            return {"pro_analysis": self._get_mock_analysis().get('pro_analysis', {})}
+
+    def _generate_standalone_pro_analysis(self, basic_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate standalone pro analysis based on basic analysis.
+
+        When the AI response for pro insights is missing a `pro_analysis` field,
+        this method constructs a context using the basic analysis and invokes
+        `_generate_pro_insights_from_context` to produce realistic pro
+        suggestions.  If that call fails, a mock pro analysis is returned.
+        """
+        # Extract key metrics to inform the pro analysis
+        market_score = basic_analysis.get('benchmarks', {}).get('market_score', 5)
+        overall_score = basic_analysis.get('benchmarks', {}).get('overall_score', 5)
+        verdict = basic_analysis.get('verdict', {}).get('decision', 'PASS')
+        
+        # Create a more detailed context
+        stage = 'early' if overall_score < 5 else 'growth'
+        context = f"""
+Generate realistic pro insights for a startup with these characteristics:
+- Market Score: {market_score}/10
+- Overall Score: {overall_score}/10
+- Investment Decision: {verdict}
+- Market: {basic_analysis.get('market_analysis', {}).get('tam', 'Technology/SaaS')}
+
+The startup appears to be in the {stage} stage.
+"""
+        # Use the context-based generator
+        result = self._generate_pro_insights_from_context(context)
+        return result.get('pro_analysis', self._get_mock_analysis().get('pro_analysis', {}))
+
+    def _get_concise_analysis_prompt(self) -> str:
+        """Get a concise analysis prompt for AI to fit within token limits.
+
+        This prompt instructs the AI to produce a comprehensive analysis in a
+        compact JSON format.  It emphasises brevity and clarity while still
+        capturing all required sections for verdict, market analysis, team
+        assessment, product, business model, benchmarks, feedback and pro
+        analysis.  Use this prompt when working with models that have
+        tighter context windows.
+        """
+        return """You are a brutally honest VC reviewing pitch decks. Provide tough but constructive feedback.
+
+Analyze and respond with ONLY a JSON object:
+
+{
+    \"verdict\": {
+        \"decision\": \"FUND\" or \"PASS\",
+        \"confidence\": 1-100,
+        \"hot_take\": \"One-liner that captures the essence\",
+        \"reasoning\": \"2-3 sentence explanation\"
+    },
+    \"market_analysis\": {
+        \"tam\": \"Market size assessment (100-150 words)\",
+        \"competition\": \"Competitive landscape (100-150 words)\",
+        \"timing\": \"Market timing assessment (100-150 words)\",
+        \"score\": 1-10
+    },
+    \"founder_assessment\": {
+        \"strengths\": [\"Strength 1\", \"Strength 2\", \"Strength 3\"],
+        \"weaknesses\": [\"Weakness 1\", \"Weakness 2\"],
+        \"domain_expertise\": 1-10,
+        \"execution_ability\": 1-10
+    },
+    \"product_analysis\": {
+        \"problem_validation\": \"2-3 sentences\",
+        \"solution_fit\": \"2-3 sentences\",
+        \"differentiation\": \"2-3 sentences\",
+        \"score\": 1-10
+    },
+    \"business_model\": {
+        \"revenue_model\": \"2-3 sentences\",
+        \"unit_economics\": \"2-3 sentences\",
+        \"scalability\": \"2-3 sentences\",
+        \"score\": 1-10
+    },
+    \"benchmarks\": {
+        \"market_score\": 1-10,
+        \"team_score\": 1-10,
+        \"product_score\": 1-10,
+        \"business_score\": 1-10,
+        \"overall_score\": 1-10
+    },
+    \"feedback\": {
+        \"brutal_truth\": \"Hard truths (150-200 words)\",
+        \"key_risks\": [\"Risk 1\", \"Risk 2\", \"Risk 3\"],
+        \"action_items\": [\"Action 1\", \"Action 2\", \"Action 3\"],
+        \"encouragement\": \"What's promising (150-200 words)\"
+    },
+    \"pro_analysis\": {
+        \"competitor_analysis\": {
+            \"main_competitors\": [
+                {
+                    \"name\": \"Competitor 1\",
+                    \"strength\": \"Main strength\",
+                    \"weakness\": \"Main weakness\",
+                    \"market_share\": \"X%\",
+                    \"funding\": \"$XM\",
+                    \"key_differentiator\": \"What makes them unique\",
+                    \"vulnerability\": \"Where they can be beaten\",
+                    \"recent_moves\": \"Latest action\"
+                }
+            ],
+            \"positioning\": \"How to position against competitors\"
+        },
+        \"market_opportunity\": {
+            \"tam_breakdown\": \"Detailed TAM\",
+            \"sam\": \"Serviceable market\",
+            \"som\": \"Obtainable market\",
+            \"growth_rate\": \"Expected CAGR\"
+        },
+        \"financial_projections\": {
+            \"year_1\": {\"users\": \"X\", \"revenue\": \"$X\"},
+            \"year_2\": {\"users\": \"X\", \"revenue\": \"$X\"}
+        },
+        \"next_steps\": {
+            \"immediate\": [\"Step 1\", \"Step 2\", \"Step 3\"],
+            \"30_days\": [\"Step 1\", \"Step 2\", \"Step 3\"],
+            \"90_days\": [\"Step 1\", \"Step 2\", \"Step 3\"]
+        }
+    }
+}
+
+IMPORTANT: Respond with ONLY the JSON object, no other text."""
     
     def _calculate_pss_grade(self, benchmarks: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate Pitch Strength Score (PSS) and map to grade"""
