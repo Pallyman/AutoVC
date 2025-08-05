@@ -1394,13 +1394,14 @@ class AutoVCApp:
 
 
 # Create the Flask app
-app = create_app()
-
-
 def create_app():
     """Application factory"""
     autovc = AutoVCApp()
     return autovc.app
+
+
+# Create app instance for WSGI servers
+app = create_app()
 
 
 # Run the application
