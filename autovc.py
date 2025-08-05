@@ -212,42 +212,43 @@ class AutoVCApp:
         # Pro analysis endpoint
         @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
         def pro_analysis(analysis_id: str):
-            """Return pro analysis data"""
+            """
+            Retrieves the complete, cached analysis data for the pro view.
+            This endpoint relies ONLY on the Redis cache.
+            """
             try:
-                cached_analysis = None
+                # If Redis is not configured or available, this feature cannot work.
+                if not self.redis_client:
+                    logger.error("Pro analysis endpoint called, but Redis is not connected.")
+                    return jsonify(error="Service is not properly configured to handle this request."), 503
                 
-                # Try to get from Redis cache
-                if self.redis_client:
-                    try:
-                        cached_data = self.redis_client.get(f"analysis:{analysis_id}")
-                        if cached_data:
-                            cached_analysis = json.loads(cached_data)
-                            logger.info(f"Retrieved cached analysis {analysis_id}")
-                    except Exception as e:
-                        logger.error(f"Cache retrieval error: {e}")
+                # Attempt to get the complete analysis object from the Redis cache.
+                # The key must match the one set in the /api/analyze endpoint.
+                cached_data = self.redis_client.get(f"analysis:{analysis_id}")
                 
-                # If not in cache, use mock analysis
-                if not cached_analysis:
-                    logger.warning(f"Analysis {analysis_id} not found in cache, using mock")
-                    cached_analysis = self._get_mock_analysis()
+                # If the key is not found, it means the analysis does not exist or has expired.
+                if not cached_data:
+                    logger.warning(f"Pro analysis requested for ID '{analysis_id}', but it was not found in cache.")
+                    return jsonify(error="Analysis not found or has expired. Please analyze the pitch deck again."), 404
                 
-                # Use ProAnalyzer to get/generate pro insights
-                pro_analyzer = ProAnalyzer(cached_analysis)
-                pro_insights = pro_analyzer.get_insights()
+                # If found, load the cached JSON data.
+                cached_analysis = json.loads(cached_data)
+                logger.info(f"Successfully retrieved cached analysis {analysis_id} for pro view.")
                 
-                # Construct response
+                # The 'pro_analysis' section is generated and cached during the initial
+                # /api/analyze call. We just need to extract it here.
+                pro_insights = cached_analysis.get("pro_analysis")
+                
+                # This is a safeguard. If the cached data is somehow incomplete, we should error out.
+                if not pro_insights:
+                    logger.error(f"Cached analysis for {analysis_id} is malformed and missing the 'pro_analysis' key.")
+                    return jsonify(error="Analysis data is incomplete. Please try analyzing again."), 500
+                
+                # Construct the final response payload exactly as the frontend expects it.
                 response_data = {
                     'analysis': {
-                        'market': {
-                            'tam': cached_analysis.get('market_analysis', {}).get('tam', 'Not available'),
-                            'competition': cached_analysis.get('market_analysis', {}).get('competition', 'Not available'),
-                            'timing': cached_analysis.get('market_analysis', {}).get('timing', 'Not available')
-                        },
-                        'founders': {
-                            'strengths': cached_analysis.get('founder_assessment', {}).get('strengths', []),
-                            'weaknesses': cached_analysis.get('founder_assessment', {}).get('weaknesses', []),
-                            'missing': 'See detailed assessment below'
-                        }
+                        'market': cached_analysis.get('market_analysis', {}),
+                        'founders': cached_analysis.get('founder_assessment', {})
                     },
                     'pro_insights': pro_insights
                 }
@@ -255,8 +256,9 @@ class AutoVCApp:
                 return jsonify(response_data)
                 
             except Exception as e:
-                logger.error(f"Pro analysis error: {e}")
-                return jsonify(error="Failed to retrieve pro analysis"), 500
+                # General error handler for unexpected issues (e.g., JSON parsing).
+                logger.error(f"A critical error occurred in pro_analysis for ID {analysis_id}: {e}")
+                return jsonify(error="An unexpected error occurred while retrieving the pro analysis."), 500
         
         # Download meme endpoint
         @self.app.route('/api/download-meme/<analysis_id>', methods=['GET'])
