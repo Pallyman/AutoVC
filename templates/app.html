@@ -250,6 +250,7 @@
             gap: 20px;
             justify-content: center;
             margin-top: 40px;
+            flex-wrap: wrap;
         }
 
         .action-button {
@@ -339,6 +340,7 @@
 
         .pro-section.show {
             display: block;
+            animation: fadeIn 0.5s;
         }
 
         .pro-title {
@@ -400,6 +402,7 @@
         .financial-table {
             width: 100%;
             margin-top: 15px;
+            border-collapse: collapse;
         }
 
         .financial-table td {
@@ -410,6 +413,66 @@
         .financial-table td:first-child {
             font-weight: bold;
             color: #ffa500;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 36px;
+            }
+            
+            .upload-section {
+                padding: 20px;
+            }
+            
+            .decision {
+                font-size: 48px;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .action-button {
+                width: 100%;
+            }
+            
+            .competitor-card {
+                font-size: 0.9em;
+            }
+            
+            .financial-table {
+                font-size: 0.9em;
+            }
+            
+            .financial-table td {
+                padding: 8px;
+            }
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 36px;
+            }
+            
+            .upload-section {
+                padding: 20px;
+            }
+            
+            .decision {
+                font-size: 48px;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .action-button {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -423,16 +486,16 @@
         <div class="upload-section">
             <h2 class="upload-title">Start Free Analysis</h2>
             <p class="upload-subtitle">No login required! Just upload your pitch deck and get instant feedback.</p>
-
+            
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📄</div>
                 <div class="upload-text">Click here or drag & drop your pitch deck</div>
                 <div class="file-types">PDF or TXT files (max 50MB)</div>
                 <input type="file" id="fileInput" accept=".pdf,.txt">
             </div>
-
+            
             <div class="selected-file" id="selectedFile"></div>
-
+            
             <button class="analyze-button" id="analyzeButton" disabled>
                 🔥 Get Roasted
             </button>
@@ -442,7 +505,7 @@
             <div id="analysisSuccess" class="success-message" style="display: none;">
                 ✅ Analysis complete!
             </div>
-
+            
             <div class="verdict">
                 <div class="decision" id="decision"></div>
                 <div class="confidence" id="confidence"></div>
@@ -514,7 +577,7 @@
 
         // File upload handling
         uploadArea.addEventListener('click', () => fileInput.click());
-
+        
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.classList.add('dragging');
@@ -527,7 +590,7 @@
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragging');
-
+            
             const files = e.dataTransfer.files;
             if (files.length > 0) {
                 handleFileSelect(files[0]);
@@ -567,10 +630,10 @@
             analyzeButton.innerHTML = 'Analyzing... <span class="loading"></span>';
             resultsSection.classList.remove('show');
             proSection.classList.remove('show');
+            document.getElementById('analysisSuccess').style.display = 'none';
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            formData.append('is_public', 'true');
 
             try {
                 const response = await fetch(`${API_BASE}/api/analyze`, {
@@ -597,34 +660,28 @@
 
         function displayResults(data) {
             currentAnalysisId = data.analysis_id;
-
+            
             // Verdict
             const decision = document.getElementById('decision');
             decision.textContent = data.verdict.decision;
-
-            // Use green for FUND, red for PASS
-            if (data.verdict.decision === 'FUND') {
-                decision.className = 'decision fund';
-            } else {
-                decision.className = 'decision pass';
-            }
-
+            decision.className = data.verdict.decision === 'FUND' ? 'decision fund' : 'decision pass';
+            
             document.getElementById('confidence').textContent = `Confidence: ${data.verdict.confidence}%`;
             document.getElementById('hotTake').textContent = `"${data.verdict.hot_take}"`;
-
+            
             // Feedback
             document.getElementById('brutalTruth').textContent = data.feedback.brutal_truth;
             document.getElementById('promising').textContent = data.feedback.encouragement;
-
+            
             // Score
             document.getElementById('overallScore').textContent = `Overall Score: ${data.benchmarks.overall_score}/10`;
-
+            
             // Meme card
             if (data.meme_card_url) {
                 const memeCard = document.getElementById('memeCard');
                 memeCard.innerHTML = `<img src="${data.meme_card_url}" alt="AutoVC Roast Card">`;
             }
-
+            
             resultsSection.classList.add('show');
             resultsSection.scrollIntoView({ behavior: 'smooth' });
         }
@@ -641,7 +698,6 @@
                 if (navigator.share) {
                     await navigator.share(shareData);
                 } else {
-                    // Fallback - copy to clipboard
                     await navigator.clipboard.writeText(shareData.url);
                     alert('Link copied to clipboard!');
                 }
@@ -653,16 +709,16 @@
         // Download meme
         downloadButton.addEventListener('click', async () => {
             if (!currentAnalysisId) return;
-
+            
             try {
                 const response = await fetch(`${API_BASE}/api/download-meme/${currentAnalysisId}`);
-
+                
                 if (response.ok) {
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `autovc_roast_${currentAnalysisId.substring(0, 8)}.png`;
+                    a.download = `autovc_roast_${currentAnalysisId}.png`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -676,28 +732,44 @@
             }
         });
 
-        // Upgrade to Pro
+        // Pro Analysis
         upgradeButton.addEventListener('click', async () => {
-            if (!currentAnalysisId) return;
-
+            if (!currentAnalysisId) {
+                console.error('No analysis ID available!');
+                return;
+            }
+            
+            upgradeButton.disabled = true;
+            upgradeButton.innerHTML = 'Loading Pro Analysis... <span class="loading"></span>';
+            
             try {
                 const response = await fetch(`${API_BASE}/api/pro-analysis/${currentAnalysisId}`);
-
+                
                 if (response.ok) {
                     const proData = await response.json();
                     displayProAnalysis(proData);
                 } else {
-                    alert('Failed to load pro analysis');
+                    const error = await response.json();
+                    alert(error.error || 'Failed to load pro analysis');
                 }
             } catch (error) {
                 console.error('Error loading pro analysis:', error);
                 alert('Failed to load pro analysis');
+            } finally {
+                upgradeButton.disabled = false;
+                upgradeButton.innerHTML = 'See Pro Analysis 🚀';
             }
         });
 
         function displayProAnalysis(data) {
             const proContent = document.getElementById('proContent');
-
+            
+            if (!data.pro_insights) {
+                proContent.innerHTML = '<p style="color: red;">Error: No pro insights available</p>';
+                proSection.classList.add('show');
+                return;
+            }
+            
             let html = `
                 <div class="pro-subsection">
                     <h3>🎯 Market Analysis</h3>
@@ -716,11 +788,10 @@
                     <ul class="pro-list">
                         ${data.analysis.founders.weaknesses.map(w => `<li>${w}</li>`).join('')}
                     </ul>
-                    <p><strong>Missing:</strong> ${data.analysis.founders.missing}</p>
                 </div>
             `;
 
-            if (data.pro_insights && data.pro_insights.competitor_analysis) {
+            if (data.pro_insights.competitor_analysis) {
                 html += `
                     <div class="pro-subsection">
                         <h3>🏆 Competitor Analysis</h3>
@@ -741,7 +812,7 @@
 
                     <div class="pro-subsection">
                         <h3>💰 Market Opportunity</h3>
-                        <p><strong>TAM:</strong> ${data.pro_insights.market_opportunity.tam_breakdown}</p>
+                        <p><strong>TAM Breakdown:</strong> ${data.pro_insights.market_opportunity.tam_breakdown}</p>
                         <p><strong>SAM:</strong> ${data.pro_insights.market_opportunity.sam}</p>
                         <p><strong>SOM:</strong> ${data.pro_insights.market_opportunity.som}</p>
                         <p><strong>Growth Rate:</strong> ${data.pro_insights.market_opportunity.growth_rate}</p>
@@ -759,6 +830,11 @@
                                 <td>Year 2</td>
                                 <td>Users: ${data.pro_insights.financial_projections.year_2.users}</td>
                                 <td>Revenue: ${data.pro_insights.financial_projections.year_2.revenue}</td>
+                            </tr>
+                            <tr>
+                                <td>Year 3</td>
+                                <td>Users: ${data.pro_insights.financial_projections.year_3.users}</td>
+                                <td>Revenue: ${data.pro_insights.financial_projections.year_3.revenue}</td>
                             </tr>
                         </table>
                     </div>
