@@ -40,12 +40,19 @@ services:
           name: autovc-db
           property: connectionString
       
-      # Redis URL (optional - comment out if not using Redis)
-      # - key: REDIS_URL
-      #   fromService:
-      #     type: redis
-      #     name: autovc-redis
-      #     property: connectionString
+      # Redis URL (REQUIRED FOR PRO ANALYSIS - NOW ENABLED!)
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: autovc-redis
+          property: connectionString
+      
+      # Rate limiting storage URL (uses Redis)
+      - key: RATELIMIT_STORAGE_URL
+        fromService:
+          type: redis
+          name: autovc-redis
+          property: connectionString
       
       # Security keys (CHANGE THESE!)
       - key: SECRET_KEY
@@ -125,13 +132,14 @@ databases:
     
     # IP allow list (optional - for security)
     ipAllowList: []
-    
-# Redis Instance (optional - uncomment if needed)
-# - type: redis
-#   name: autovc-redis
-#   region: oregon
-#   plan: free
-#   ipAllowList: []
+
+# Redis Instance (REQUIRED FOR PRO ANALYSIS - NOW ENABLED!)
+- type: redis
+  name: autovc-redis
+  region: oregon # Should match your web service region
+  plan: free # Change to 'starter' for production (more memory)
+  maxmemoryPolicy: allkeys-lru # Evict least recently used keys when memory is full
+  ipAllowList: [] # Leave empty to allow connections from your Render services
 
 # Background Workers (optional - for async tasks)
 # - type: worker
