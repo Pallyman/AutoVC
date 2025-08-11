@@ -1,5 +1,5 @@
 # autovc.py
-# Updated AutoVC implementation with modular pro analysis and fixed endpoints
+# AutoVC implementation with real AI analysis only
 
 import os
 import json
@@ -21,6 +21,9 @@ from PIL import Image, ImageDraw, ImageFont
 import PyPDF2
 import io
 import base64
+
+# AI APIs
+import openai
 
 # Import the pro analyzer module
 from pro_analyzer import ProAnalyzer
@@ -58,12 +61,20 @@ class Config:
     
     # Frontend
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5000')
+    
+    # AI API Keys
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
-# Simplified AutoVC Application
+# AutoVC Application
 class AutoVCApp:
     def __init__(self):
         self.app = Flask(__name__)
         self.app.config.from_object(Config)
+        
+        # Validate API keys
+        if not self.app.config["OPENAI_API_KEY"] and not self.app.config["GROQ_API_KEY"]:
+            logger.error("WARNING: No AI API keys configured! Set OPENAI_API_KEY or GROQ_API_KEY")
         
         # Initialize components
         self.setup_extensions()
@@ -102,6 +113,7 @@ class AutoVCApp:
                 self.redis_client = None
         else:
             self.redis_client = None
+            logger.warning("Redis not available - Pro Analysis features will be limited")
     
     def setup_error_handlers(self):
         """Setup error handling"""
@@ -143,9 +155,9 @@ class AutoVCApp:
         
         # Free analysis endpoint
         @self.app.route('/api/analyze', methods=['POST'])
-        @self.limiter.limit("3 per hour")
+        @self.limiter.limit("10 per hour")
         def analyze_pitch_free():
-            """Free analysis endpoint - no authentication required"""
+            """Free analysis endpoint - uses real AI"""
             try:
                 # Validate file upload
                 if 'file' not in request.files:
@@ -174,8 +186,14 @@ class AutoVCApp:
                 file_content = file.read()
                 content = self._extract_content(file_content, file_ext)
                 
-                # Get AI analysis (or mock for demo)
-                analysis = self._get_ai_analysis(content[:3000] if content else "")
+                if not content or len(content.strip()) < 100:
+                    return jsonify(error="Could not extract enough content from the file. Please ensure it contains text."), 400
+                
+                # Get REAL AI analysis
+                analysis = self._get_ai_analysis(content)
+                
+                if not analysis:
+                    return jsonify(error="AI analysis failed. Please check API keys are configured."), 500
                 
                 # Generate analysis ID
                 analysis_id = str(uuid.uuid4())[:8]
@@ -212,39 +230,27 @@ class AutoVCApp:
         # Pro analysis endpoint
         @self.app.route('/api/pro-analysis/<analysis_id>', methods=['GET'])
         def pro_analysis(analysis_id: str):
-            """
-            Retrieves the complete, cached analysis data for the pro view.
-            This endpoint relies ONLY on the Redis cache.
-            """
+            """Retrieves the complete, cached analysis data for the pro view"""
             try:
-                # If Redis is not configured or available, this feature cannot work.
                 if not self.redis_client:
                     logger.error("Pro analysis endpoint called, but Redis is not connected.")
-                    return jsonify(error="Service is not properly configured to handle this request."), 503
+                    return jsonify(error="Pro analysis requires Redis to be configured. Please contact support."), 503
                 
-                # Attempt to get the complete analysis object from the Redis cache.
-                # The key must match the one set in the /api/analyze endpoint.
                 cached_data = self.redis_client.get(f"analysis:{analysis_id}")
                 
-                # If the key is not found, it means the analysis does not exist or has expired.
                 if not cached_data:
                     logger.warning(f"Pro analysis requested for ID '{analysis_id}', but it was not found in cache.")
                     return jsonify(error="Analysis not found or has expired. Please analyze the pitch deck again."), 404
                 
-                # If found, load the cached JSON data.
                 cached_analysis = json.loads(cached_data)
                 logger.info(f"Successfully retrieved cached analysis {analysis_id} for pro view.")
                 
-                # The 'pro_analysis' section is generated and cached during the initial
-                # /api/analyze call. We just need to extract it here.
                 pro_insights = cached_analysis.get("pro_analysis")
                 
-                # This is a safeguard. If the cached data is somehow incomplete, we should error out.
                 if not pro_insights:
-                    logger.error(f"Cached analysis for {analysis_id} is malformed and missing the 'pro_analysis' key.")
+                    logger.error(f"Cached analysis for {analysis_id} is missing the 'pro_analysis' key.")
                     return jsonify(error="Analysis data is incomplete. Please try analyzing again."), 500
                 
-                # Construct the final response payload exactly as the frontend expects it.
                 response_data = {
                     'analysis': {
                         'market': cached_analysis.get('market_analysis', {}),
@@ -256,8 +262,7 @@ class AutoVCApp:
                 return jsonify(response_data)
                 
             except Exception as e:
-                # General error handler for unexpected issues (e.g., JSON parsing).
-                logger.error(f"A critical error occurred in pro_analysis for ID {analysis_id}: {e}")
+                logger.error(f"Error in pro_analysis for ID {analysis_id}: {e}")
                 return jsonify(error="An unexpected error occurred while retrieving the pro analysis."), 500
         
         # Download meme endpoint
@@ -276,7 +281,7 @@ class AutoVCApp:
                         pass
                 
                 if not cached_analysis:
-                    cached_analysis = self._get_mock_analysis()
+                    return jsonify(error="Analysis not found"), 404
                 
                 # Generate meme card
                 meme_url = self._generate_meme_card(cached_analysis, analysis_id)
@@ -305,7 +310,8 @@ class AutoVCApp:
             return jsonify({
                 'status': 'healthy',
                 'timestamp': datetime.utcnow().isoformat(),
-                'redis': 'connected' if self.redis_client else 'not connected'
+                'redis': 'connected' if self.redis_client else 'not connected',
+                'ai_configured': bool(self.app.config.get("OPENAI_API_KEY") or self.app.config.get("GROQ_API_KEY"))
             })
     
     def _render_homepage(self):
@@ -809,8 +815,8 @@ class AutoVCApp:
         </div>
 
         <div class="upload-section">
-            <h2 class="upload-title">Start Free Analysis</h2>
-            <p class="upload-subtitle">No login required! Just upload your pitch deck and get instant feedback.</p>
+            <h2 class="upload-title">Start Real AI Analysis</h2>
+            <p class="upload-subtitle">Upload your pitch deck for genuine AI-powered feedback.</p>
             
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📄</div>
@@ -822,13 +828,13 @@ class AutoVCApp:
             <div class="selected-file" id="selectedFile"></div>
             
             <button class="analyze-button" id="analyzeButton" disabled>
-                🔥 Get Roasted
+                🔥 Get Roasted by AI
             </button>
         </div>
 
         <div class="results-section" id="resultsSection">
             <div id="analysisSuccess" class="success-message" style="display: none;">
-                ✅ Analysis complete!
+                ✅ AI Analysis complete!
             </div>
             
             <div class="verdict">
@@ -952,7 +958,7 @@ class AutoVCApp:
             if (!selectedFile) return;
 
             analyzeButton.disabled = true;
-            analyzeButton.innerHTML = 'Analyzing... <span class="loading"></span>';
+            analyzeButton.innerHTML = 'AI is analyzing... <span class="loading"></span>';
             resultsSection.classList.remove('show');
             proSection.classList.remove('show');
 
@@ -978,7 +984,7 @@ class AutoVCApp:
                 alert('Failed to analyze pitch deck. Please try again.');
             } finally {
                 analyzeButton.disabled = false;
-                analyzeButton.innerHTML = '🔥 Get Roasted';
+                analyzeButton.innerHTML = '🔥 Get Roasted by AI';
             }
         });
 
@@ -1014,7 +1020,7 @@ class AutoVCApp:
         shareButton.addEventListener('click', async () => {
             const shareData = {
                 title: 'My AutoVC Pitch Roast',
-                text: `I got roasted by AutoVC! Check out my pitch analysis.`,
+                text: `I got roasted by AutoVC AI! Check out my pitch analysis.`,
                 url: `${window.location.origin}/analysis/${currentAnalysisId}`
             };
 
@@ -1208,79 +1214,139 @@ class AutoVCApp:
             return ""
     
     def _get_ai_analysis(self, content: str) -> Dict[str, Any]:
-        """Get AI analysis (using mock for demo)"""
-        # In production, this would call OpenAI/Groq/etc
-        # For now, return enhanced mock with pro_analysis
-        return self._get_mock_analysis()
-    
-    def _get_mock_analysis(self) -> Dict[str, Any]:
-        """Return comprehensive mock analysis including pro_analysis"""
-        base_analysis = {
-            "verdict": {
-                "decision": "PASS",
-                "confidence": 65,
-                "hot_take": "Great passion, but the market doesn't care about your solution yet",
-                "reasoning": "While the team shows promise, the market validation is too weak and the business model needs significant work."
-            },
-            "market_analysis": {
-                "tam": "The total addressable market is estimated at $2.5B globally, with the US representing $800M. However, this is a mature market with slow growth (5% CAGR) and high customer acquisition costs. The specific niche you're targeting represents only $50M of this market.",
-                "competition": "The competitive landscape is dominated by three major players: TechGiant Corp (45% market share), EstablishedCo (30%), and InnovateLabs (15%). These companies have deep pockets, strong brand recognition, and existing customer relationships that will be difficult to displace.",
-                "timing": "Market timing is challenging. While there's growing awareness of the problem you're solving, customers aren't actively seeking new solutions. The last major innovation in this space was 5 years ago, and there's no clear catalyst for change on the horizon.",
-                "score": 5
-            },
-            "founder_assessment": {
-                "strengths": [
-                    "Strong technical background with 10+ years in software development",
-                    "Previous startup experience as CTO of a YC company",
-                    "Deep passion for solving this specific problem"
-                ],
-                "weaknesses": [
-                    "Limited sales and go-to-market experience",
-                    "No direct experience in the target industry"
-                ],
-                "domain_expertise": 4,
-                "execution_ability": 6
-            },
-            "product_analysis": {
-                "problem_validation": "The problem is real but not urgent for most potential customers. Your user interviews show interest but low willingness to pay.",
-                "solution_fit": "The solution is technically elegant but may be overengineered for the actual user needs. Consider a simpler MVP.",
-                "differentiation": "Limited differentiation from existing solutions. The 10% performance improvement isn't enough to justify switching costs.",
-                "score": 5
-            },
-            "business_model": {
-                "revenue_model": "SaaS model with $99/month pricing is appropriate for the market, but the value proposition isn't strong enough to support it.",
-                "unit_economics": "CAC of $2,000 with an LTV of $2,400 leaves little room for error. Need to dramatically improve these metrics.",
-                "scalability": "The high-touch sales process and customization requirements will limit scalability without significant investment.",
-                "score": 4
-            },
-            "benchmarks": {
-                "market_score": 5,
-                "team_score": 5,
-                "product_score": 5,
-                "business_score": 4,
-                "overall_score": 4.75
-            },
-            "feedback": {
-                "brutal_truth": "You're solving a vitamin problem in a world that needs painkillers. Your solution is technically impressive, but you haven't proven that customers actually care enough to pay for it. The market is mature with entrenched competitors who can easily copy your features if they prove valuable. Without a clear differentiator or a burning customer need, you're heading for the startup graveyard. You need to either find a more urgent problem to solve or discover a unique insight about this market that others have missed.",
-                "key_risks": [
-                    "Market education cost too high - customers don't see the urgency",
-                    "Established competitors can easily copy features and undercut pricing",
-                    "No clear path to profitability with current unit economics"
-                ],
-                "action_items": [
-                    "Get 10 paying customers at any price point to prove value",
-                    "Focus on one specific niche where the pain is most acute",
-                    "Partner with someone who has deep industry relationships"
-                ],
-                "encouragement": "Your technical execution is genuinely impressive, and the team has great chemistry. You've built something that works well - now you need to find the right market for it. Your persistence and problem-solving skills are exactly what's needed in a founder. With better market focus and some adjustments to your go-to-market strategy, you could turn this into something special. Don't give up, but be willing to pivot hard if needed."
-            }
-        }
+        """Get REAL AI analysis using OpenAI or Groq"""
         
-        # Add pro_analysis section
-        pro_analyzer = ProAnalyzer(base_analysis)
-        base_analysis["pro_analysis"] = pro_analyzer.get_insights()
+        # Check for API keys
+        openai_key = self.app.config.get("OPENAI_API_KEY")
+        groq_key = self.app.config.get("GROQ_API_KEY")
         
-        return base_analysis
+        if not openai_key and not groq_key:
+            logger.error("No AI API keys configured! Set OPENAI_API_KEY or GROQ_API_KEY in environment variables.")
+            return None
+        
+        # Prepare the analysis prompt
+        prompt = f"""You are a brutally honest venture capitalist analyzing a pitch deck. 
+        Analyze the following pitch deck content and provide a comprehensive assessment.
+        
+        PITCH DECK CONTENT:
+        {content[:3000]}
+        
+        Respond with ONLY valid JSON in this exact format:
+        {{
+            "verdict": {{
+                "decision": "FUND" or "PASS",
+                "confidence": (number 0-100),
+                "hot_take": "One brutal sentence that cuts to the core issue",
+                "reasoning": "Brief explanation of the decision"
+            }},
+            "market_analysis": {{
+                "tam": "Detailed total addressable market analysis with specific numbers and growth rates",
+                "competition": "Analysis of competitive landscape and positioning",
+                "timing": "Assessment of market timing and readiness",
+                "score": (number 1-10)
+            }},
+            "founder_assessment": {{
+                "strengths": ["strength 1", "strength 2", "strength 3"],
+                "weaknesses": ["weakness 1", "weakness 2"],
+                "domain_expertise": (number 1-10),
+                "execution_ability": (number 1-10)
+            }},
+            "product_analysis": {{
+                "problem_validation": "Assessment of problem and customer pain",
+                "solution_fit": "How well the solution addresses the problem",
+                "differentiation": "What makes this unique and defensible",
+                "score": (number 1-10)
+            }},
+            "business_model": {{
+                "revenue_model": "Analysis of revenue model and pricing",
+                "unit_economics": "CAC, LTV, and margin analysis",
+                "scalability": "Assessment of growth potential",
+                "score": (number 1-10)
+            }},
+            "benchmarks": {{
+                "market_score": (number 1-10),
+                "team_score": (number 1-10),
+                "product_score": (number 1-10),
+                "business_score": (number 1-10),
+                "overall_score": (number 1-10, can be decimal like 6.5)
+            }},
+            "feedback": {{
+                "brutal_truth": "2-3 sentences of harsh reality they need to hear. Be specific and actionable.",
+                "key_risks": ["specific risk 1", "specific risk 2", "specific risk 3"],
+                "action_items": ["specific action 1", "specific action 2", "specific action 3"],
+                "encouragement": "Something genuinely positive and constructive about their pitch or team"
+            }}
+        }}
+        
+        Be extremely honest and specific. Use real numbers where possible. Don't sugarcoat problems.
+        """
+        
+        try:
+            # Try OpenAI first
+            if openai_key:
+                logger.info("Using OpenAI for analysis...")
+                openai.api_key = openai_key
+                
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo-1106",  # Use JSON mode supported model
+                    messages=[
+                        {"role": "system", "content": "You are a brutal but helpful VC analyst. Always respond with valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=2000,
+                    response_format={"type": "json_object"}
+                )
+                
+                analysis_text = response.choices[0].message.content
+                analysis = json.loads(analysis_text)
+                
+                # Add pro analysis using ProAnalyzer
+                pro_analyzer = ProAnalyzer(analysis)
+                analysis["pro_analysis"] = pro_analyzer.get_insights()
+                
+                logger.info("Successfully generated AI analysis using OpenAI")
+                return analysis
+            
+            # Try Groq as fallback
+            elif groq_key:
+                logger.info("Using Groq for analysis...")
+                # Import Groq client
+                try:
+                    from groq import Groq
+                    client = Groq(api_key=groq_key)
+                    
+                    response = client.chat.completions.create(
+                        model="mixtral-8x7b-32768",
+                        messages=[
+                            {"role": "system", "content": "You are a brutal but helpful VC analyst. Always respond with valid JSON only."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.7,
+                        max_tokens=2000,
+                        response_format={"type": "json_object"}
+                    )
+                    
+                    analysis_text = response.choices[0].message.content
+                    analysis = json.loads(analysis_text)
+                    
+                    # Add pro analysis
+                    pro_analyzer = ProAnalyzer(analysis)
+                    analysis["pro_analysis"] = pro_analyzer.get_insights()
+                    
+                    logger.info("Successfully generated AI analysis using Groq")
+                    return analysis
+                    
+                except ImportError:
+                    logger.error("Groq library not installed. Install with: pip install groq")
+                    return None
+                    
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI response as JSON: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"AI analysis failed: {e}")
+            return None
     
     def _generate_meme_card(self, analysis: Dict[str, Any], analysis_id: str) -> str:
         """Generate shareable meme card"""
