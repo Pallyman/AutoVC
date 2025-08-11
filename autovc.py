@@ -23,7 +23,7 @@ import io
 import base64
 
 # AI APIs
-import openai
+# NOTE: OpenAI client is imported dynamically in _get_ai_analysis
 
 # Import the pro analyzer module
 from pro_analyzer import ProAnalyzer
@@ -1285,9 +1285,16 @@ class AutoVCApp:
             # Try OpenAI first
             if openai_key:
                 logger.info("Using OpenAI for analysis...")
-                openai.api_key = openai_key
-                
-                response = openai.ChatCompletion.create(
+                try:
+                    # Dynamically import OpenAI client for v1.x
+                    from openai import OpenAI
+                except ImportError as e:
+                    logger.error(f"OpenAI library not available: {e}")
+                    return None
+                # Create a client using the provided API key
+                client = OpenAI(api_key=openai_key)
+                # Call the chat completions endpoint
+                response = client.chat.completions.create(
                     model="gpt-3.5-turbo-1106",  # Use JSON mode supported model
                     messages=[
                         {"role": "system", "content": "You are a brutal but helpful VC analyst. Always respond with valid JSON only."},
@@ -1297,14 +1304,12 @@ class AutoVCApp:
                     max_tokens=2000,
                     response_format={"type": "json_object"}
                 )
-                
+                # Extract the content from the first choice
                 analysis_text = response.choices[0].message.content
                 analysis = json.loads(analysis_text)
-                
                 # Add pro analysis using ProAnalyzer
                 pro_analyzer = ProAnalyzer(analysis)
                 analysis["pro_analysis"] = pro_analyzer.get_insights()
-                
                 logger.info("Successfully generated AI analysis using OpenAI")
                 return analysis
             
